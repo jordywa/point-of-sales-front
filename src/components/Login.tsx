@@ -3,6 +3,8 @@ import axios from 'axios';
 import { API_BASE_URL } from '../apiConfig';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
+import { colors } from '../colors';
+import loginIcon from '../assets/login-icon.jpeg';
 
 // Interface for component props
 interface LoginProps {
@@ -30,6 +32,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             const { token } = response.data;
 
             if (!token) {
+                setError("Check your credential");
                 throw new Error('No token received from server.');
             }
 
@@ -41,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         } catch (err: any) {
             console.error('Login failed:', err);
-            const errorMessage = err.response?.data?.message || 'Failed to login. Please check your credentials.';
+            const errorMessage = err.response?.data?.message || 'Failed to login. API Issue';
             setError(errorMessage);
         } finally {
             setLoading(false);
@@ -49,47 +52,59 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     };
 
     return (
-        <div className="flex items-center justify-center h-screen bg-gray-100">
-            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
-                <h2 className="text-2xl font-bold text-center text-gray-900">Login</h2>
-                <form className="space-y-6" onSubmit={handleLogin}>
-                    <div>
-                        <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username</label>
-                        <input
-                            id="username"
-                            name="username"
-                            type="text"
-                            autoComplete="username"
-                            required
-                            className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                        />
+        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+            <div className="w-full max-w-4xl p-8 mx-4 bg-white rounded-lg shadow-lg md:flex md:items-center md:space-x-8">
+                {/* Left side - Image or Branding */}
+                <div className="hidden h-full md:block md:w-1/2">
+                    {/* Replace with your image or branding */}
+                    <div className="flex items-center justify-center h-full bg-cover bg-center rounded-lg" style={{backgroundImage: `url(${loginIcon})`}}>
+                         <h1 className="text-4xl font-bold text-white">Point of Sales</h1>
                     </div>
-                    <div>
-                        <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            autoComplete="current-password"
-                            required
-                            className="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                    </div>
-                    {error && <p className="text-sm text-center text-red-600">{error}</p>}
-                    <div>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full px-4 py-2 font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-400"
-                        >
-                            {loading ? 'Logging in...' : 'Login'}
-                        </button>
-                    </div>
-                </form>
+                </div>
+
+                {/* Right side - Login Form */}
+                <div className="md:w-1/2">
+                    <h2 className="mb-6 text-3xl font-bold text-center text-gray-900">Login</h2>
+                    <form className="space-y-6" onSubmit={handleLogin}>
+                        <div>
+                            <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username</label>
+                            <input
+                                id="username"
+                                name="username"
+                                type="text"
+                                autoComplete="username"
+                                required
+                                className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
+                            <input
+                                id="password"
+                                name="password"
+                                type="password"
+                                autoComplete="current-password"
+                                required
+                                className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                        </div>
+                        {error && <p className="text-sm text-center text-red-600">{error}</p>}
+                        <div>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="w-full px-6 py-3 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
+                                style={{ backgroundColor: colors.primary }}
+                            >
+                                {loading ? 'Logging in...' : 'Login'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
     );

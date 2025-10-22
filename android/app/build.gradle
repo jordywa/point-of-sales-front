@@ -22,6 +22,10 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    buildFeatures {
+        // Aktifkan pembuatan BuildConfig secara eksplisit
+        buildConfig = true
+    }
 }
 
 repositories {
