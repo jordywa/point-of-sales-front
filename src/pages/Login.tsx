@@ -3,7 +3,7 @@ import axios from 'axios';
 import { API_BASE_URL } from '../apiConfig';
 import { signInWithCustomToken } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
-import { colors } from '../colors';
+
 import loginIcon from '../assets/login-icon.jpeg';
 
 // Interface for component props
@@ -36,10 +36,18 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 throw new Error('No token received from server.');
             }
 
-            // 2. Sign in with custom token
+            // // 2. Sign in with custom token
             await signInWithCustomToken(auth, token);
 
-            // 3. Notify parent component of success
+            // // 3. Get Firebase ID Token and store it
+            const idToken = await auth.currentUser?.getIdToken();
+            if (idToken) {
+                localStorage.setItem('authToken', idToken);
+            } else {
+                throw new Error('Failed to get Firebase ID Token.');
+            }
+
+            // 4. Notify parent component of success
             onLoginSuccess();
 
         } catch (err: any) {
@@ -69,12 +77,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                         <div>
                             <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username</label>
                             <input
-                                id="username"
-                                name="username"
-                                type="text"
-                                autoComplete="username"
-                                required
-                                className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
                                 value={username}
                                 onChange={(e) => setUsername(e.target.value)}
                             />
@@ -87,7 +90,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                                 type="password"
                                 autoComplete="current-password"
                                 required
-                                className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
+        className="w-full px-4 py-3 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                             />
@@ -97,8 +100,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full px-6 py-3 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-                                style={{ backgroundColor: colors.primary }}
+                                className="w-full px-6 py-3 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary"
                             >
                                 {loading ? 'Logging in...' : 'Login'}
                             </button>

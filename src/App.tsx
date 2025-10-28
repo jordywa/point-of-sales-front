@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { auth } from './firebaseConfig';
-import Login from './components/Login';
-import ProductList from './components/ProductList';
-import BranchManagement from './components/BranchManagement';
+import Login from './pages/Login';
+import ProductList from './pages/ProductList';
+import BranchManagement from './pages/BranchManagement';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { colors } from './colors';
 
 const App: React.FC = () => {
     const [user, setUser] = useState<User | null>(null);
@@ -46,8 +45,7 @@ const App: React.FC = () => {
                             </div>
                             <button
                                 onClick={() => auth.signOut()}
-                                className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-                                style={{ backgroundColor: colors.primary }}
+                                className="px-4 py-2 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary"
                             >
                                 Logout
                             </button>

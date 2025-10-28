@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { collection, onSnapshot, QueryDocumentSnapshot, type DocumentData, query, where } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
+import authenticatedAxios from '../utils/api';
 import { API_BASE_URL } from '../apiConfig';
-import { colors } from '../colors';
 
 interface Branch {
   id: string;
@@ -33,54 +33,65 @@ const BranchManagement: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
-    fetchBranches();
+    const unsubscribe = fetchBranches();
+    return () => unsubscribe && unsubscribe();
   }, []);
 
   useEffect(() => {
     if (selectedBranch) {
-      fetchUsersByBranch(selectedBranch.id);
+      const unsubscribe = fetchUsersByBranch(selectedBranch.id);
+      return () => unsubscribe && unsubscribe();
     } else {
       setUsers([]);
     }
   }, [selectedBranch]);
 
-  const fetchBranches = async () => {
+  const fetchBranches = () => {
     setLoading(true);
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/branches`);
-      setBranches(response.data);
-    } catch (err) {
-      console.error('Error fetching branches:', err);
-      setError('Failed to fetch branches.');
-    } finally {
-      setLoading(false);
-    }
+    const branchesCollection = collection(db, 'branches');
+    const unsubscribe = onSnapshot(branchesCollection, (snapshot) => {
+        const branchesData = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
+            id: doc.id,
+            ...doc.data()
+        } as Branch));
+        setBranches(branchesData);
+        setLoading(false);
+    }, (err) => {
+        console.error('Error fetching branches:', err);
+        setError('Failed to fetch branches.');
+        setLoading(false);
+    });
+    return unsubscribe;
   };
 
-  const fetchUsersByBranch = async (branchId: string) => {
+  const fetchUsersByBranch = (branchId: string) => {
     setLoading(true);
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/users?branchId=${branchId}`);
-      // Filter out master users, as they don't belong to a specific branch in this context
-      setUsers(response.data.filter((user: User) => user.role !== 'master'));
-    } catch (err) {
-      console.error(`Error fetching users for branch ${branchId}:`, err);
-      setError('Failed to fetch users for this branch.');
-    } finally {
-      setLoading(false);
-    }
+    const usersCollection = collection(db, 'users');
+    const q = query(usersCollection, where('branchId', '==', branchId));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const usersData = snapshot.docs.map((doc: QueryDocumentSnapshot<DocumentData>) => ({
+            id: doc.id,
+            ...doc.data()
+        } as User));
+        setUsers(usersData.filter((user: User) => user.role !== 'master'));
+        setLoading(false);
+    }, (err) => {
+        console.error(`Error fetching users for branch ${branchId}:`, err);
+        setError('Failed to fetch users for this branch.');
+        setLoading(false);
+    });
+    return unsubscribe;
   };
 
   const handleCreateUpdateBranch = async (branchData: Omit<Branch, 'id' | 'isDeleted'>, id?: string) => {
     try {
       if (id) {
-        await axios.put(`${API_BASE_URL}/api/branches/${id}`, branchData);
+        await authenticatedAxios.put(`${API_BASE_URL}/api/branches/${id}`, branchData);
       } else {
-        await axios.post(`${API_BASE_URL}/api/branches`, branchData);
+        await authenticatedAxios.post(`${API_BASE_URL}/api/branches`, branchData);
       }
       setShowBranchForm(false);
       setCurrentBranch(null);
-      fetchBranches();
     } catch (err) {
       console.error('Error saving branch:', err);
       setError('Failed to save branch.');
@@ -90,11 +101,10 @@ const BranchManagement: React.FC = () => {
   const handleSoftDeleteRestoreBranch = async (id: string, isDeleted: boolean) => {
     try {
       if (isDeleted) {
-        await axios.patch(`${API_BASE_URL}/api/branches/${id}/restore`);
+        await authenticatedAxios.patch(`${API_BASE_URL}/api/branches/${id}/restore`);
       } else {
-        await axios.delete(`${API_BASE_URL}/api/branches/${id}`);
+        await authenticatedAxios.delete(`${API_BASE_URL}/api/branches/${id}`);
       }
-      fetchBranches();
     } catch (err) {
       console.error('Error updating branch status:', err);
       setError('Failed to update branch status.');
@@ -109,13 +119,12 @@ const BranchManagement: React.FC = () => {
     try {
       const userPayload = { ...userData, branchId: selectedBranch.id };
       if (id) {
-        await axios.put(`${API_BASE_URL}/api/users/${id}`, userPayload);
+        await authenticatedAxios.put(`${API_BASE_URL}/api/users/${id}`, userPayload);
       } else {
-        await axios.post(`${API_BASE_URL}/api/users`, userPayload);
+        await authenticatedAxios.post(`${API_BASE_URL}/api/users`, userPayload);
       }
       setShowUserForm(false);
       setCurrentUser(null);
-      fetchUsersByBranch(selectedBranch.id);
     } catch (err) {
       console.error('Error saving user:', err);
       setError('Failed to save user.');
@@ -129,11 +138,10 @@ const BranchManagement: React.FC = () => {
     }
     try {
       if (isDeleted) {
-        await axios.patch(`${API_BASE_URL}/api/users/${id}/restore`);
+        await authenticatedAxios.patch(`${API_BASE_URL}/api/users/${id}/restore`);
       } else {
-        await axios.delete(`${API_BASE_URL}/api/users/${id}`);
+        await authenticatedAxios.delete(`${API_BASE_URL}/api/users/${id}`);
       }
-      fetchUsersByBranch(selectedBranch.id);
     } catch (err) {
       console.error('Error updating user status:', err);
       setError('Failed to update user status.');
@@ -159,8 +167,7 @@ const BranchManagement: React.FC = () => {
             <h2 className="text-2xl font-semibold text-gray-800">Branches</h2>
             <button
               onClick={() => { setShowBranchForm(true); setCurrentBranch(null); }}
-              className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-              style={{ backgroundColor: colors.primary }}
+              className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary hover:bg-primary-dark"
             >
               Add New Branch
             </button>
@@ -169,7 +176,7 @@ const BranchManagement: React.FC = () => {
             {branches.map(branch => (
               <div
                 key={branch.id}
-                className={`p-4 border rounded-lg shadow-sm cursor-pointer ${selectedBranch?.id === branch.id ? 'border-orange-500 ring-2 ring-orange-200' : 'border-gray-200'} ${branch.isDeleted ? 'bg-red-50 opacity-70' : 'bg-white'}`}
+                className={`p-4 border rounded-lg shadow-sm cursor-pointer ${selectedBranch?.id === branch.id ? 'border-primary ring-2 ring-primary-light' : 'border-gray-200'} ${branch.isDeleted ? 'bg-red-50 opacity-70' : 'bg-white'}`}
                 onClick={() => setSelectedBranch(branch)}
               >
                 <h3 className="text-lg font-medium text-gray-900">{branch.name}</h3>
@@ -201,8 +208,7 @@ const BranchManagement: React.FC = () => {
               <h2 className="text-2xl font-semibold text-gray-800">Users for {selectedBranch.name}</h2>
               <button
                 onClick={() => { setShowUserForm(true); setCurrentUser(null); }}
-                className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-                style={{ backgroundColor: colors.primary }}
+                className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary hover:bg-primary-dark"
               >
                 Add New User
               </button>
@@ -295,7 +301,7 @@ const BranchForm: React.FC<BranchFormProps> = ({ initialData, onSubmit, onCancel
         <input
           type="text"
           id="branchName"
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-orange-500 focus:border-orange-500"
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -306,7 +312,7 @@ const BranchForm: React.FC<BranchFormProps> = ({ initialData, onSubmit, onCancel
         <input
           type="text"
           id="branchLocation"
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-orange-500 focus:border-orange-500"
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           required
@@ -322,8 +328,7 @@ const BranchForm: React.FC<BranchFormProps> = ({ initialData, onSubmit, onCancel
         </button>
         <button
           type="submit"
-          className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-          style={{ backgroundColor: colors.primary }}
+          className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary hover:bg-primary-dark"
         >
           {initialData ? 'Update' : 'Create'}
         </button>
@@ -364,7 +369,7 @@ const UserForm: React.FC<UserFormProps> = ({ initialData, onSubmit, onCancel, br
         <input
           type="text"
           id="username"
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-orange-500 focus:border-orange-500"
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
@@ -375,7 +380,7 @@ const UserForm: React.FC<UserFormProps> = ({ initialData, onSubmit, onCancel, br
         <input
           type="password"
           id="password"
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-orange-500 focus:border-orange-500"
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           {...(!initialData && { required: true })} // Required only for new users
@@ -385,7 +390,7 @@ const UserForm: React.FC<UserFormProps> = ({ initialData, onSubmit, onCancel, br
         <label htmlFor="role" className="block text-sm font-medium text-gray-700">Role</label>
         <select
           id="role"
-          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-orange-500 focus:border-orange-500"
+          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
           value={role}
           onChange={(e) => setRole(e.target.value as User['role'])}
           required
@@ -404,8 +409,7 @@ const UserForm: React.FC<UserFormProps> = ({ initialData, onSubmit, onCancel, br
         </button>
         <button
           type="submit"
-          className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2"
-          style={{ backgroundColor: colors.primary }}
+          className="px-4 py-2 font-semibold text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary hover:bg-primary-dark"
         >
           {initialData ? 'Update' : 'Create'}
         </button>
