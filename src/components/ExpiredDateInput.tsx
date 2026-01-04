@@ -1,63 +1,90 @@
 import React, { useState, useEffect } from 'react';
+import FormattedNumberInput from './FormattedNumberInput';
 
 interface ExpiredDateInputProps {
   onChange: (date: Date) => void;
-  initialDate: Date;
+  initialDate?: Date; // Make optional
+  disableDaysMode?: boolean; // New prop
 }
 
-const ExpiredDateInput: React.FC<ExpiredDateInputProps> = ({ onChange, initialDate }) => {
-  const [mode, setMode] = useState('days'); // 'days' or 'date'
-  const [days, setDays] = useState(3);
-  const [date, setDate] = useState(initialDate);
+const ExpiredDateInput: React.FC<ExpiredDateInputProps> = ({ onChange, initialDate, disableDaysMode }) => {
+  const [mode, setMode] = useState<'days' | 'date'>(disableDaysMode ? 'date' : 'days');
+  const [days, setDays] = useState(30); // Default to 30 days
+  
+  // Default to initialDate or 30 days from now if undefined
+  const [date, setDate] = useState(() => initialDate || new Date(new Date().setDate(new Date().getDate() + 30)));
 
+  // Effect to synchronize the internal state when the initialDate prop changes
   useEffect(() => {
-    if (mode === 'days') {
-      const newDate = new Date();
-      newDate.setDate(newDate.getDate() + days);
-      onChange(newDate);
-    } else {
-      onChange(date);
+    if (initialDate) {
+      setDate(initialDate);
     }
-  }, [mode, days, date, onChange]);
+  }, [initialDate]);
+
+  // Effect to call onChange when the user interacts with the component
+  useEffect(() => {
+    let newDate;
+    if (mode === 'days') {
+      newDate = new Date();
+      newDate.setHours(0, 0, 0, 0); // Normalize to start of the day
+      newDate.setDate(newDate.getDate() + days);
+    } else {
+      newDate = date;
+    }
+
+    // Only call onChange if the date has actually changed
+    if (initialDate?.getTime() !== newDate.getTime()) {
+      onChange(newDate);
+    }
+  }, [mode, days, date, onChange, initialDate]);
+
+  const handleDaysChange = (val: number) => {
+    setDays(val || 0);
+  };
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [year, month, day] = e.target.value.split('-').map(Number);
+    const newDate = new Date(year, month - 1, day);
+    setDate(newDate);
+  };
 
   const today = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="p-2 border rounded-md">
-      <div className="flex items-center mb-2">
+    <div className={`${disableDaysMode ? "" : "p-2 border rounded-md"}`}>
+      {!disableDaysMode && <div className="flex items-center mb-2">
+        
         <button 
           type="button"
           onClick={() => setMode('days')}
           className={`px-3 py-1 text-sm rounded-l-md ${mode === 'days' ? 'bg-primary text-white' : 'bg-gray-200'}`}>
             Days from Now
         </button>
+        
         <button 
           type="button"
           onClick={() => setMode('date')}
-          className={`px-3 py-1 text-sm rounded-r-md ${mode === 'date' ? 'bg-primary text-white' : 'bg-gray-200'}`}>
+          className={`px-3 py-1 text-sm ${!disableDaysMode ? 'rounded-r-md' : 'rounded-md'} ${mode === 'date' ? 'bg-primary text-white' : 'bg-gray-200'}`}>
             Pick a Date
         </button>
-      </div>
-      {mode === 'days' ? (
+      </div>}
+      {mode === 'days' && !disableDaysMode ? (
         <div>
           <label htmlFor="days-input" className="block text-sm font-medium text-gray-700">Expires in (days)</label>
-          <input 
-            type="number"
-            id="days-input"
+          <FormattedNumberInput
+            id={`days-input`}
             value={days}
-            onChange={(e) => setDays(parseInt(e.target.value, 10) || 0)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
-            min="1"
+            onChange={(val: number) => handleDaysChange(val)}
           />
         </div>
       ) : (
         <div>
-          <label htmlFor="date-input" className="block text-sm font-medium text-gray-700">Expiration Date</label>
+          {!disableDaysMode && <label htmlFor="date-input" className="block text-sm font-medium text-gray-700">Expiration Date</label>}
           <input 
             type="date"
             id="date-input"
-            value={date.toISOString().split('T')[0]}
-            onChange={(e) => setDate(new Date(e.target.value))}
+            value={date ? date.toISOString().split('T')[0] : ''} // Handle case where date might be null/undefined
+            onChange={handleDateChange}
             className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
             min={today}
           />

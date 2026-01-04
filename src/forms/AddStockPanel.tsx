@@ -1,56 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import authenticatedAxios from '../utils/api';
-import { API_BASE_URL } from '../apiConfig';
+
 import FormattedNumberInput from '../components/FormattedNumberInput';
 import ExpiredDateInput from '../components/ExpiredDateInput';
 import { type DocumentData } from 'firebase/firestore';
 import { Trash, X } from 'lucide-react';
-
-interface StockDetail {
-  quantity: number;
-  purchasePrice: number;
-  expiredDate: Date;
-}
+import { type StockDetail } from '../interfaces/stock';
 
 interface AddStockPanelProps {
   selectedProducts: DocumentData[];
+  stockDetails: Record<string, StockDetail>;
+  onStockDetailChange: (productId: string, field: keyof StockDetail, value: any) => void;
   onStockAdded: () => void;
   onCancel: () => void;
   onClearSelection: () => void;
   onRemoveProduct: (productId: string) => void;
 }
 
-const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStockAdded, onCancel, onClearSelection, onRemoveProduct }) => {
-  const [stockDetails, setStockDetails] = useState<Record<string, StockDetail>>({});
+const AddStockPanel: React.FC<AddStockPanelProps> = ({ 
+  selectedProducts, 
+  stockDetails,
+  onStockDetailChange,
+  onStockAdded, 
+  onCancel, 
+  onClearSelection, 
+  onRemoveProduct 
+}) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const initialStockDetails: Record<string, StockDetail> = {};
-    const defaultExpiredDate = new Date();
-    defaultExpiredDate.setDate(defaultExpiredDate.getDate() + 30);
-
-    selectedProducts.forEach(product => {
-      initialStockDetails[product.id] = { 
-        quantity: stockDetails[product.id]?.quantity || 0, 
-        purchasePrice: stockDetails[product.id]?.purchasePrice || 0, 
-        expiredDate: stockDetails[product.id]?.expiredDate || defaultExpiredDate,
-      };
-    });
-    setStockDetails(initialStockDetails);
-  }, [selectedProducts]);
-
-  const handleDetailChange = (productId: string, field: keyof StockDetail, value: any) => {
-    setStockDetails(prevDetails => ({
-      ...prevDetails,
-      [productId]: {
-        ...prevDetails[productId],
-        [field]: value,
-      },
-    }));
-  };
-
-  const handleAddStock = async () => {
+  const handleAddStock = useCallback(async () => {
     const stockEntries = Object.entries(stockDetails)
       .map(([productId, details]) => ({
         productId,
@@ -69,7 +48,7 @@ const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStock
     setLoading(true);
 
     try {
-      await authenticatedAxios.post(`${API_BASE_URL}/products/bulk-add-stock`, {
+      await authenticatedAxios.post(`/products/bulk-add-stock`, {
         stockEntries,
       });
       onStockAdded();
@@ -79,26 +58,28 @@ const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStock
     } finally {
       setLoading(false);
     }
-  };
+  }, [stockDetails, onStockAdded]);
 
   const renderContent = () => (
     <div className="flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4 border-b pb-2">
-        <h3 className="text-xl font-semibold">Add Stock</h3>
-        <button onClick={onCancel} className="text-gray-500 hover:text-gray-700">
-          <X size={24} />
+      <div className='flex flex-col border-b mb-4'>
+        <div className="flex justify-between items-center  pb-2">
+          <h3 className="text-xl font-semibold">Add Stock</h3>
+          <button onClick={onCancel} className="text-gray-500 hover:text-gray-700">
+            <X size={24} />
+          </button>
+        </div>
+        <button 
+            onClick={onClearSelection}
+            className="w-full mb-4 px-4 py-2 text-sm font-semibold text-white rounded-md bg-red-500 hover:bg-red-600"
+        >
+            Clear Selection
         </button>
       </div>
       {selectedProducts.length === 0 ? (
         <p className="text-center text-gray-500 mt-4">Select products from the list to add stock.</p>
       ) : (
         <div className="flex-grow overflow-y-auto pr-2">
-            <button 
-                onClick={onClearSelection}
-                className="w-full mb-4 px-4 py-2 text-sm font-semibold text-white rounded-md bg-red-500 hover:bg-red-600"
-            >
-                Clear Selection
-            </button>
           <div className="space-y-4">
             {selectedProducts.map(product => (
               <div key={product.id} className="p-4 border rounded-lg relative">
@@ -113,7 +94,7 @@ const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStock
                       <FormattedNumberInput
                         id={`quantity-${product.id}`}
                         value={stockDetails[product.id]?.quantity || 0}
-                        onChange={(value) => handleDetailChange(product.id, 'quantity', value)}
+                        onChange={(value) => onStockDetailChange(product.id, 'quantity', value)}
                       />
                     </div>
                     <div className='w-10/12'>
@@ -121,7 +102,7 @@ const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStock
                       <FormattedNumberInput
                         id={`price-${product.id}`}
                         value={stockDetails[product.id]?.purchasePrice || 0}
-                        onChange={(value) => handleDetailChange(product.id, 'purchasePrice', value)}
+                        onChange={(value) => onStockDetailChange(product.id, 'purchasePrice', value)}
                       />
                     </div>
                   </div>
@@ -129,7 +110,7 @@ const AddStockPanel: React.FC<AddStockPanelProps> = ({ selectedProducts, onStock
                     <label className="block text-sm font-medium text-gray-700">Expired Date</label>
                     <ExpiredDateInput 
                       initialDate={stockDetails[product.id]?.expiredDate}
-                      onChange={(date) => handleDetailChange(product.id, 'expiredDate', date)} 
+                      onChange={(date) => onStockDetailChange(product.id, 'expiredDate', date)} 
                     />
                   </div>
                 </div>

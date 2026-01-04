@@ -12,8 +12,8 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
   if (!product) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-30" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex justify-center items-center z-30" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center border-b pb-3 mb-4">
           <h2 className="text-2xl font-bold text-gray-900">{product.name}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
@@ -31,12 +31,22 @@ const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product, onClos
             <h3 className="text-lg font-semibold text-gray-800 border-t pt-4 mt-4">Stock History</h3>
             {product.stockSequence && product.stockSequence.length > 0 ? (
               <div className="mt-2 space-y-3">
+                
+                <div className="bg-gray-200 p-3 rounded-lg">
+                  <div className="grid grid-cols-4 gap-2 text-sm">
+                      <p className="font-semibold">Date In</p>
+                      <p className="font-semibold">Qty</p>
+                      <p className="font-semibold">Purchase Price</p>
+                      <p className="font-semibold">Expired At</p>
+                  </div>
+                </div>
                 {product.stockSequence.slice().reverse().map((entry: any, index: number) => (
                   <div key={index} className="bg-gray-50 p-3 rounded-lg">
-                    <div className="grid grid-cols-3 gap-2 text-sm">
-                        <p className="text-gray-700"><span className="font-medium">Date:</span> {getFormattedDate(entry.addedAt)}</p>
-                        <p className="text-gray-700"><span className="font-medium">Quantity:</span> {getFormattedNumber(entry.quantity)}</p>
-                        <p className="text-gray-700"><span className="font-medium">Purchase Price:</span> {getFormattedCurrency(entry.purchasePrice)}</p>
+                    <div className="grid grid-cols-4 gap-2 text-sm">
+                        <p className="text-gray-700">{getFormattedDate(entry.addedAt)}</p>
+                        <p className="text-gray-700">{getFormattedNumber(entry.quantity)}</p>
+                        <p className="text-gray-700">{getFormattedCurrency(entry.purchasePrice)}</p>
+                        <p className="text-gray-700">{getFormattedDate(entry.expiredDate)}</p>
                     </div>
                   </div>
                 ))}

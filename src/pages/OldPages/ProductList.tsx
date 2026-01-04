@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { collection, onSnapshot, QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import AddProductForm from '../forms/AddProductForm';
-import AddStockPanel from '../forms/AddStockPanel';
-import ProductDetailModal from '../components/ProductDetailModal';
-import { getFormattedCurrency, getFormattedNumber } from '../utils/formatting';
+import { db } from '../../firebaseConfig';
+import AddProductForm from '../../forms/AddProductForm';
+import AddStockPanel from '../../forms/AddStockPanel';
+import ProductDetailModal from '../../components/ProductDetailModal';
+import { getFormattedCurrency, getFormattedNumber } from '../../utils/formatting';
+import { type StockDetail } from '../../interfaces/stock';
 
 const ProductList: React.FC = () => {
     const [products, setProducts] = useState<DocumentData[]>([]);
@@ -17,6 +18,7 @@ const ProductList: React.FC = () => {
     const [addStockMode, setAddStockMode] = useState(false);
     const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
     const [viewingProduct, setViewingProduct] = useState<DocumentData | null>(null);
+    const [stockDetails, setStockDetails] = useState<Record<string, StockDetail>>({});
 
     useEffect(() => {
         const unsubscribeProducts = fetchProducts();
@@ -27,6 +29,28 @@ const ProductList: React.FC = () => {
             unsubscribeCategories();
         };
     }, []);
+
+    useEffect(() => {
+        if (!addStockMode) {
+            setStockDetails({});
+            return;
+        }
+
+        const defaultExpiredDate = new Date();
+        defaultExpiredDate.setDate(defaultExpiredDate.getDate() + 30);
+
+        setStockDetails(prevDetails => {
+            const newDetails: Record<string, StockDetail> = {};
+            selectedProducts.forEach(productId => {
+                newDetails[productId] = {
+                    quantity: prevDetails[productId]?.quantity || 0,
+                    purchasePrice: prevDetails[productId]?.purchasePrice || 0,
+                    expiredDate: prevDetails[productId]?.expiredDate || defaultExpiredDate,
+                };
+            });
+            return newDetails;
+        });
+    }, [selectedProducts, addStockMode]);
 
     const fetchProducts = () => {
         const productsCollection = collection(db, 'products');
@@ -91,10 +115,15 @@ const ProductList: React.FC = () => {
         }
     };
 
-    const getCategoryName = (categoryId: string) => {
-        const category = categories.find(cat => cat.id === categoryId);
-        return category ? category.name : 'Uncategorized';
-    };
+    const handleStockDetailChange = useCallback((productId: string, field: keyof StockDetail, value: any) => {
+        setStockDetails(prevDetails => ({
+            ...prevDetails,
+            [productId]: {
+                ...prevDetails[productId],
+                [field]: value,
+            },
+        }));
+    }, []);
 
     const filteredProducts = products.filter(product => {
         const matchesCategory = selectedCategory ? product.categoryId === selectedCategory : true;
@@ -119,24 +148,24 @@ const ProductList: React.FC = () => {
                     <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
                         {!addStockMode && <button
                             onClick={() => setAddStockMode(true)}
-                            className="w-full sm:w-auto px-4 py-2 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary flex-shrink-0"
+                            className="w-full sm:w-auto px-4 py-2 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-primary shrink-0"
                         >
                             Add Stock
                         </button>}
                         {!addStockMode && <button
                             onClick={() => setShowAddProductModal(true)}
-                            className="w-full sm:w-auto px-4 py-2 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-insert text-primary-dark hover:bg-insert/70 flex-shrink-0"
+                            className="w-full sm:w-auto px-4 py-2 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-insert text-primary-dark hover:bg-insert/70 shrink-0"
                             disabled={addStockMode}
                         >
                             Add New Product
                         </button>}
                         
                         <button
-                        onClick={() =>{
+                        onClick={() => {
                             setSearchTerm("");
                             setSelectedCategory("")
                         }}
-                        className={`w-full sm:w-auto px-4 py-2 text-sm font-semibold text-white rounded-md flex-shrink-0 ${`bg-gray-400 hover:bg-gray-500`}`}>
+                        className={`w-full sm:w-auto px-4 py-2 text-sm font-semibold text-white rounded-md shrink-0 ${`bg-gray-400 hover:bg-gray-500`}`}>
                             Clear Filter
                         </button>
                     </div>
@@ -177,7 +206,7 @@ const ProductList: React.FC = () => {
                     </div>
                 </div>
 
-                <div className={`grid  sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${addStockMode ? 'md:grid-cols-1' : ''} gap-6`}>
+                <div className={`grid  sm:grid-cols-2 md:grid-cols-2  xl:grid-cols-4 ${addStockMode ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-6`}>
                     {filteredProducts.length > 0 ? (
                         filteredProducts.map(product => (
                             <div key={product.id} 
@@ -192,7 +221,6 @@ const ProductList: React.FC = () => {
                                     />
                                 )}
                                 <h3 className="text-xl font-semibold text-gray-800 mb-2">{product.name}</h3>
-                                <p className="text-sm text-gray-500 mb-2">{getCategoryName(product.categoryId)}</p>
                                 <p className="text-gray-600 mb-1">Price: <span className="font-medium text-gray-800">{getFormattedCurrency(product.price)}</span></p>
                                 <p className="text-gray-600">Stock: <span className="font-medium text-gray-800">{getFormattedNumber(product.totalStock)}</span></p>
                             </div>
@@ -219,6 +247,8 @@ const ProductList: React.FC = () => {
             {addStockMode && (
                 <AddStockPanel
                     selectedProducts={products.filter(p => selectedProducts.includes(p.id))}
+                    stockDetails={stockDetails}
+                    onStockDetailChange={handleStockDetailChange}
                     onStockAdded={() => {
                         fetchProducts();
                         setSelectedProducts([]);
@@ -227,6 +257,7 @@ const ProductList: React.FC = () => {
                     onClearSelection={() => setSelectedProducts([])}
                     onRemoveProduct={handleSelectProduct} // Reusing the toggle function
                 />
+                
             )}
         </div>
     );

@@ -7,9 +7,10 @@ interface FormattedNumberInputProps {
   placeholder?: string;
   id?: string;
   required?: boolean;
+  className?: string;
 }
 
-const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ value, onChange, placeholder, id, required }) => {
+const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ value, onChange, placeholder, id, required, className = "mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary" }) => {
   const [displayValue, setDisplayValue] = useState('');
 
   useEffect(() => {
@@ -42,7 +43,7 @@ const FormattedNumberInput: React.FC<FormattedNumberInputProps> = ({ value, onCh
     <input
       type="text"
       id={id}
-      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-primary focus:border-primary"
+      className={className}
       value={displayValue}
       onChange={handleChange}
       onBlur={handleBlur}

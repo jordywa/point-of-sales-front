@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, QueryDocumentSnapshot, type DocumentData, query, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import authenticatedAxios from '../utils/api';
-import { API_BASE_URL } from '../apiConfig';
+import { db } from '../../firebaseConfig';
+import authenticatedAxios from '../../utils/api';
 
 interface Branch {
   id: string;
@@ -86,9 +85,9 @@ const BranchManagement: React.FC = () => {
   const handleCreateUpdateBranch = async (branchData: Omit<Branch, 'id' | 'isDeleted'>, id?: string) => {
     try {
       if (id) {
-        await authenticatedAxios.put(`${API_BASE_URL}/api/branches/${id}`, branchData);
+        await authenticatedAxios.put(`/branches/${id}`, branchData);
       } else {
-        await authenticatedAxios.post(`${API_BASE_URL}/api/branches`, branchData);
+        await authenticatedAxios.post(`/branches`, branchData);
       }
       setShowBranchForm(false);
       setCurrentBranch(null);
@@ -101,9 +100,9 @@ const BranchManagement: React.FC = () => {
   const handleSoftDeleteRestoreBranch = async (id: string, isDeleted: boolean) => {
     try {
       if (isDeleted) {
-        await authenticatedAxios.patch(`${API_BASE_URL}/api/branches/${id}/restore`);
+        await authenticatedAxios.patch(`/branches/${id}/restore`);
       } else {
-        await authenticatedAxios.delete(`${API_BASE_URL}/api/branches/${id}`);
+        await authenticatedAxios.delete(`/branches/${id}`);
       }
     } catch (err) {
       console.error('Error updating branch status:', err);
@@ -119,9 +118,9 @@ const BranchManagement: React.FC = () => {
     try {
       const userPayload = { ...userData, branchId: selectedBranch.id };
       if (id) {
-        await authenticatedAxios.put(`${API_BASE_URL}/api/users/${id}`, userPayload);
+        await authenticatedAxios.put(`/users/${id}`, userPayload);
       } else {
-        await authenticatedAxios.post(`${API_BASE_URL}/api/users`, userPayload);
+        await authenticatedAxios.post(`/users`, userPayload);
       }
       setShowUserForm(false);
       setCurrentUser(null);
@@ -138,9 +137,9 @@ const BranchManagement: React.FC = () => {
     }
     try {
       if (isDeleted) {
-        await authenticatedAxios.patch(`${API_BASE_URL}/api/users/${id}/restore`);
+        await authenticatedAxios.patch(`/users/${id}/restore`);
       } else {
-        await authenticatedAxios.delete(`${API_BASE_URL}/api/users/${id}`);
+        await authenticatedAxios.delete(`/users/${id}`);
       }
     } catch (err) {
       console.error('Error updating user status:', err);

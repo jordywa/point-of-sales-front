@@ -51,7 +51,7 @@ const SearchableDropdown: React.FC<SearchableDropdownProps> = ({ options, value,
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
-          <ul className="max-h-60 overflow-y-auto">
+          <ul className="max-h-30 overflow-y-auto">
             {filteredOptions.map(option => (
               <li
                 key={option.value}

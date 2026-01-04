@@ -5,7 +5,7 @@ import SearchableDropdown from '../components/SearchableDropdown';
 import FormattedNumberInput from '../components/FormattedNumberInput';
 import ExpiredDateInput from '../components/ExpiredDateInput';
 import authenticatedAxios from '../utils/api';
-import { API_BASE_URL } from '../apiConfig';
+
 
 interface AddProductFormProps {
   onClose: () => void;
@@ -51,7 +51,7 @@ const AddProductForm: React.FC<AddProductFormProps> = ({ onClose, onProductAdded
 
   const handleAddCategory = async (categoryName: string) => {
     try {
-      const response = await authenticatedAxios.post(`${API_BASE_URL}/api/product-categories`, { name: categoryName });
+      const response = await authenticatedAxios.post(`/product-categories`, { name: categoryName });
       const newCategory = { value: response.data.id, label: response.data.name };
       setCategories([...categories, newCategory]);
       setCategoryId(newCategory.value);
@@ -79,7 +79,7 @@ const AddProductForm: React.FC<AddProductFormProps> = ({ onClose, onProductAdded
     }
 
     try {
-      await authenticatedAxios.post(`${API_BASE_URL}/api/products`, productData);
+      await authenticatedAxios.post(`/products`, productData);
       onProductAdded();
       onClose();
     } catch (err: any) {  
