@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../../firebaseConfig';
 import { X } from 'lucide-react';
-import { getFormattedCurrency } from '../utils/formatting';
-import authenticatedAxios from '../utils/api';
+import { getFormattedCurrency } from '../../utils/formatting';
+import authenticatedAxios from '../../utils/api';
 
 interface SalesPaymentModalProps {
   totalBill: number;

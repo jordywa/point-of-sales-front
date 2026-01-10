@@ -1,6 +1,6 @@
 import React from 'react';
 import { type DocumentData } from 'firebase/firestore';
-import { getFormattedCurrency, getFormattedNumber, getFormattedDate } from '../utils/formatting';
+import { getFormattedCurrency, getFormattedNumber, getFormattedDate } from '../../utils/formatting';
 import { X } from 'lucide-react';
 
 interface ProductDetailModalProps {

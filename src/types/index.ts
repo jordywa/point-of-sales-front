@@ -115,17 +115,30 @@ export interface Bank {
 }
 
 export interface InventoryVariant {
-  size: string;
-  stockKarung: number;
-  stockPack: number;
-  stockPcs: number;
-  priceModal: number;
-  priceJual: number;
+  name: string;
+  unitConversions: UnitConversion[];
+  qty: number;
+  currSeq: ProductDetailSequence[];
+}
+
+export interface ProductDetailSequence{
+  qty: number;
+  inId?: string;
+  outId?: string;
+  purchasePrice: number;
 }
 
 export interface Permission{
   id: string,
   label: string,
+}
+
+export interface UnitConversion{
+  name: string;
+  qtyConversion: number;
+  sourceConversion?: string;
+  purchasePrice: number;
+  salesPrice: number;
 }
 
 export interface InventoryItem {

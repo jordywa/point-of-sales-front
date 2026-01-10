@@ -72,6 +72,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         
         const firestoreInstance = getFirestore(app, userData.companyId);
         setUserDb(firestoreInstance);
+        
         setUser(userData);
       } else {
         console.log("User tidak ditemukan di database");

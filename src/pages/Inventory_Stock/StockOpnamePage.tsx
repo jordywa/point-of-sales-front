@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Menu, Search, ClipboardCheck, History, Save, ArrowRight, Loader2, Package, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { INITIAL_INVENTORY_DATA } from '../data/mockData';
-import type { InventoryItem, InventoryVariant } from '../types/index';
+import { INITIAL_INVENTORY_DATA } from '../../data/mockData';
+import type { InventoryItem, InventoryVariant } from '../../types/index';
 
 interface StockOpnamePageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;

@@ -1,21 +1,36 @@
 // src/pages/StockInPage.tsx
 
 import React, { useState, useMemo } from 'react';
-import { Menu, Search, Truck, ArrowRight, CheckCircle, Package, Calendar, User, Save, AlertCircle, XCircle, LayoutGrid, List, ArrowLeft, History } from 'lucide-react';
+import { 
+  Menu, Search, Truck, ArrowRight, CheckCircle, Package, 
+  Calendar, User, Save, AlertCircle, XCircle, LayoutGrid, 
+  List, ArrowLeft, History, ChevronDown, ChevronUp 
+} from 'lucide-react';
+import LoadingOverlay from '../../components/LoadingOverlay';
+import ConfirmationDialog from '../../components/ConfirmationDialog';
 
 interface StockInPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
 // --- TYPE DEFINITIONS ---
+interface ReceivedHistory {
+  date: string;
+  qty: number;
+  refSalesNo?: string; // Ref Sales No untuk PO Customer
+  customerName?: string; // Nama Customer untuk PO Customer
+}
+
 interface POItem {
   id: number;
   productId: number;
   name: string;
   unit: string;
-  qtyOrdered: number; // Total pesan
+  qtyOrdered: number; // Total pesan (Jumlah PO Customer/Supplier)
+  qtyCustomerPO: number; // Jumlah PO Customer untuk produk ini
   qtyReceived: number; // Yang sudah masuk sebelumnya
   qtyIncoming: number; // State untuk input user (yang baru sampai)
+  history: ReceivedHistory[]; // [NEW] Menyimpan riwayat penerimaan per barang
 }
 
 // Update Status Type
@@ -30,6 +45,7 @@ interface POTransaction {
 }
 
 // --- MOCK DATA ---
+// WOI BACKEND JORDY: Data ini nantinya diambil dari API (GET /api/purchase-orders)
 const INITIAL_PO_DATA: POTransaction[] = [
   {
     id: 'PO202512/000005',
@@ -37,8 +53,8 @@ const INITIAL_PO_DATA: POTransaction[] = [
     date: '10/12/2025',
     status: 'PENDING',
     items: [
-      { id: 1, productId: 1, name: 'Plastik Dayana', unit: 'Karung', qtyOrdered: 50, qtyReceived: 0, qtyIncoming: 0 },
-      { id: 2, productId: 2, name: 'Plastik Loco', unit: 'Pack', qtyOrdered: 200, qtyReceived: 0, qtyIncoming: 0 },
+      { id: 1, productId: 1, name: 'Plastik Dayana', unit: 'Karung', qtyOrdered: 50, qtyCustomerPO: 10, qtyReceived: 0, qtyIncoming: 0, history: [] },
+      { id: 2, productId: 2, name: 'Plastik Loco', unit: 'Pack', qtyOrdered: 200, qtyCustomerPO: 0, qtyReceived: 0, qtyIncoming: 0, history: [] },
     ]
   },
   {
@@ -47,7 +63,10 @@ const INITIAL_PO_DATA: POTransaction[] = [
     date: '08/12/2025',
     status: 'PARTIAL',
     items: [
-      { id: 3, productId: 3, name: 'Plastik Wayang', unit: 'KG', qtyOrdered: 100, qtyReceived: 50, qtyIncoming: 0 }, 
+      { 
+        id: 3, productId: 3, name: 'Plastik Wayang', unit: 'KG', qtyOrdered: 100, qtyCustomerPO: 20, qtyReceived: 50, qtyIncoming: 0, 
+        history: [{ date: '08/12/2025', qty: 50, refSalesNo: 'SO202512/000002', customerName: 'PT Maju Jaya' }] 
+      }, 
     ]
   },
   {
@@ -56,7 +75,10 @@ const INITIAL_PO_DATA: POTransaction[] = [
     date: '01/12/2025',
     status: 'COMPLETED',
     items: [
-        { id: 4, productId: 4, name: 'Kresek Hitam', unit: 'Pack', qtyOrdered: 100, qtyReceived: 100, qtyIncoming: 0 }, 
+        { 
+          id: 4, productId: 4, name: 'Kresek Hitam', unit: 'Pack', qtyOrdered: 100, qtyCustomerPO: 0, qtyReceived: 100, qtyIncoming: 0,
+          history: [{ date: '01/12/2025', qty: 100 }]
+        }, 
     ]
   },
   {
@@ -65,7 +87,10 @@ const INITIAL_PO_DATA: POTransaction[] = [
     date: '05/12/2025',
     status: 'FORCED_COMPLETE', // Selesai Tidak Lengkap
     items: [
-        { id: 5, productId: 5, name: 'Gelas Plastik', unit: 'Dus', qtyOrdered: 50, qtyReceived: 40, qtyIncoming: 0 }, 
+        { 
+          id: 5, productId: 5, name: 'Gelas Plastik', unit: 'Dus', qtyOrdered: 50, qtyCustomerPO: 5, qtyReceived: 40, qtyIncoming: 0,
+          history: [{ date: '05/12/2025', qty: 40, refSalesNo: 'SO202512/000003', customerName: 'CV Sumber Makmur' }]
+        }, 
     ]
   }
 ];
@@ -79,8 +104,16 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   
+  // State untuk expand history per produk
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+
   // [NEW] State Tablet View
   const [isTabletView, setIsTabletView] = useState(false);
+
+  // State untuk Loading dan Confirmation Dialog
+  const [isLoading, setIsLoading] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
 
   // --- LOGIC FILTER & SORT ---
   const filteredSortedPO = useMemo(() => {
@@ -120,7 +153,7 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
     setSelectedPO({ ...selectedPO, items: updatedItems });
   };
 
-  // 1. Simpan Masuk Stok (Normal)
+  // 1. Simpan Masuk Stok (Normal) dengan logic PO Customer
   const handleProcessStockIn = () => {
     if (!selectedPO) return;
 
@@ -129,23 +162,109 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
       alert("Mohon isi jumlah 'Terima Sekarang' minimal pada satu barang.");
       return;
     }
-    
-    // Logic update status
-    const isAllCompleted = selectedPO.items.every(i => (i.qtyReceived + i.qtyIncoming) >= i.qtyOrdered);
-    const newStatus: POStatus = isAllCompleted ? 'COMPLETED' : 'PARTIAL';
 
-    const updatedItems = selectedPO.items.map(i => ({
-        ...i,
-        qtyReceived: i.qtyReceived + i.qtyIncoming,
-        qtyIncoming: 0
-    }));
+    // Set confirmation action
+    setConfirmAction(() => () => {
+      setShowConfirmDialog(false);
+      processStockInConfirmed();
+    });
+    setShowConfirmDialog(true);
+  };
+
+  const processStockInConfirmed = async () => {
+    if (!selectedPO) return;
+
+    setIsLoading(true);
+    
+    // Simulasi delay untuk loading
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const today = new Date().toLocaleDateString('id-ID'); // Format DD/MM/YYYY
+
+    // Data dummy customer untuk PO Customer
+    const dummyCustomers: { [key: number]: { refSalesNo: string; customerName: string } } = {
+      1: { refSalesNo: 'SO202512/000001', customerName: 'PT Maju Jaya' },
+      2: { refSalesNo: 'SO202512/000002', customerName: 'CV Sumber Makmur' },
+      3: { refSalesNo: 'SO202512/000003', customerName: 'Toko Sejahtera' },
+      4: { refSalesNo: 'SO202512/000004', customerName: 'UD Berkah Abadi' },
+      5: { refSalesNo: 'SO202512/000005', customerName: 'PT Makmur Sentosa' },
+    };
+
+    // Logic update status & history dengan prioritas PO Customer
+    const updatedItems = selectedPO.items.map(i => {
+        if (i.qtyIncoming > 0) {
+            const remaining = i.qtyOrdered - i.qtyReceived;
+            // Hitung jumlah yang akan dipotong untuk PO Customer (prioritas teratas)
+            // qtyCustomerPO yang tersisa (belum terpenuhi)
+            const remainingCustomerPO = i.qtyCustomerPO;
+            const qtyForCustomerPO = Math.min(i.qtyIncoming, remainingCustomerPO, remaining);
+            // Sisa yang masuk ke stok gudang
+            const qtyForStock = i.qtyIncoming - qtyForCustomerPO;
+
+            // Ambil data dummy customer jika ada PO Customer
+            const customerData = qtyForCustomerPO > 0 && dummyCustomers[i.productId] 
+                ? dummyCustomers[i.productId] 
+                : null;
+
+            // Buat history entries terpisah untuk Customer PO dan Gudang
+            const newHistoryEntries: ReceivedHistory[] = [];
+
+            // 1. History untuk Customer PO (jika ada)
+            if (qtyForCustomerPO > 0) {
+                newHistoryEntries.push({
+                    date: today,
+                    qty: qtyForCustomerPO,
+                    refSalesNo: customerData?.refSalesNo,
+                    customerName: customerData?.customerName
+                });
+            }
+
+            // 2. History untuk masuk gudang (jika ada sisa)
+            if (qtyForStock > 0) {
+                newHistoryEntries.push({
+                    date: today,
+                    qty: qtyForStock,
+                    refSalesNo: undefined,
+                    customerName: 'Masuk ke stok gudang'
+                });
+            }
+
+            // WOI BACKEND JORDY: 
+            // 1. Jika qtyForCustomerPO > 0, update status PO Customer dengan refSalesNo teratas
+            //    - GET /api/sales-orders?productId={i.productId}&status=PENDING untuk ambil refSalesNo teratas
+            //    - PUT /api/sales-orders/{refSalesNo} untuk update qty received
+            //    - Kurangi qtyCustomerPO yang belum terpenuhi (qtyCustomerPO = qtyCustomerPO - qtyForCustomerPO)
+            //    - Update status PO Customer menjadi PARTIAL atau COMPLETED
+            // 2. Jika qtyForStock > 0, tambahkan ke stok fisik produk di tabel Inventory
+            //    - PUT /api/inventory/{i.productId}/stock dengan body: { qty: qtyForStock, type: 'STOCK_IN' }
+            //    - Tambahkan qtyForStock ke stok fisik produk dengan productId: i.productId
+            console.log(`Product ${i.name}: ${qtyForCustomerPO} untuk PO Customer (${customerData?.refSalesNo}), ${qtyForStock} masuk stok gudang`);
+
+            return {
+                ...i,
+                qtyReceived: i.qtyReceived + i.qtyIncoming,
+                qtyCustomerPO: i.qtyCustomerPO - qtyForCustomerPO, // Kurangi qtyCustomerPO setelah dipotong
+                history: [...i.history, ...newHistoryEntries],
+                qtyIncoming: 0
+            };
+        }
+        return i;
+    });
+
+    const isAllCompleted = updatedItems.every(i => i.qtyReceived >= i.qtyOrdered);
+    const newStatus: POStatus = isAllCompleted ? 'COMPLETED' : 'PARTIAL';
     
     const updatedPO: POTransaction = { ...selectedPO, items: updatedItems, status: newStatus };
+
+    // WOI BACKEND JORDY: Kirim data transaksi yang diupdate ke server
+    // PUT /api/purchase-orders/{selectedPO.id} dengan body: updatedPO
+    // Pastikan stok fisik produk di tabel Inventory juga ditambah sesuai qtyIncoming
 
     // Update List Utama
     setPoList(prev => prev.map(p => p.id === selectedPO.id ? updatedPO : p));
     setSelectedPO(updatedPO);
 
+    setIsLoading(false);
     alert(`Berhasil menerima barang!\nStatus PO: ${newStatus === 'COMPLETED' ? 'SELESAI' : 'PARSIAL (Setengah Sampai)'}`);
   };
 
@@ -153,16 +272,32 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
   const handleForceComplete = () => {
       if (!selectedPO) return;
 
-      const confirmMsg = "PERINGATAN!\n\nAnda akan menyelesaikan PO ini secara paksa (Selesai Tidak Lengkap).\nSisa barang yang belum diterima akan dianggap batal/hangus.\n\nApakah Anda yakin?";
-      
-      if (window.confirm(confirmMsg)) {
-          const updatedPO: POTransaction = { ...selectedPO, status: 'FORCED_COMPLETE' };
-          
-          setPoList(prev => prev.map(p => p.id === selectedPO.id ? updatedPO : p));
-          setSelectedPO(updatedPO);
+      setConfirmAction(() => () => {
+        setShowConfirmDialog(false);
+        forceCompleteConfirmed();
+      });
+      setShowConfirmDialog(true);
+  };
 
-          alert("PO berhasil diselesaikan secara paksa.");
-      }
+  const forceCompleteConfirmed = async () => {
+    if (!selectedPO) return;
+
+    setIsLoading(true);
+    
+    // Simulasi delay untuk loading
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const updatedPO: POTransaction = { ...selectedPO, status: 'FORCED_COMPLETE' };
+    
+    // WOI BACKEND JORDY: Update status PO menjadi FORCED_COMPLETE di database
+    // PUT /api/purchase-orders/{selectedPO.id} dengan body: { status: 'FORCED_COMPLETE' }
+    // Pastikan PO tidak bisa diinput lagi setelah status ini
+    
+    setPoList(prev => prev.map(p => p.id === selectedPO.id ? updatedPO : p));
+    setSelectedPO(updatedPO);
+
+    setIsLoading(false);
+    alert("PO berhasil diselesaikan secara paksa.");
   };
 
   // Helper untuk render status badge
@@ -177,6 +312,21 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 font-sans overflow-hidden">
+      <LoadingOverlay show={isLoading} message="Memproses data..." />
+      <ConfirmationDialog
+        isOpen={showConfirmDialog}
+        onConfirm={() => confirmAction && confirmAction()}
+        onCancel={() => setShowConfirmDialog(false)}
+        title={selectedPO && selectedPO.items.some(i => i.qtyIncoming > 0) ? "Konfirmasi Terima Barang" : "Konfirmasi Selesaikan PO"}
+        message={
+          selectedPO && selectedPO.items.some(i => i.qtyIncoming > 0)
+            ? "Apakah Anda yakin ingin menyimpan barang masuk? Barang akan diproses dengan prioritas PO Customer terlebih dahulu."
+            : "PERINGATAN!\n\nAnda akan menyelesaikan PO ini secara paksa (Selesai Tidak Lengkap).\nSisa barang yang belum diterima akan dianggap batal/hangus.\n\nApakah Anda yakin?"
+        }
+        confirmText="Ya, Simpan"
+        cancelText="Batal"
+        type={selectedPO && selectedPO.items.some(i => i.qtyIncoming > 0) ? 'warning' : 'danger'}
+      />
       {/* HEADER PAGE */}
       <div className="h-16 bg-white flex items-center justify-between px-6 border-b border-gray-200 shadow-sm flex-shrink-0 z-20">
          <div className="flex items-center gap-4">
@@ -215,7 +365,6 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
       <div className="flex flex-1 overflow-hidden relative">
           
           {/* --- LEFT PANEL: LIST PO --- */}
-          {/* Layout Logic: Full width on Tablet, Fixed width on PC. Hidden when detail opens in Tablet Mode. */}
           <div className={`
               flex-col bg-white z-10 transition-all duration-300 border-r border-gray-200
               ${isTabletView 
@@ -267,11 +416,8 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
                   {filteredSortedPO.length === 0 ? (
                       <div className="p-8 text-center text-gray-400 text-sm">Tidak ada transaksi PO yang sesuai.</div>
                   ) : (
-                      // CONTAINER: GRID jika TabletView, LIST jika Normal
                       <div className={isTabletView ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "flex flex-col"}>
                           {filteredSortedPO.map(po => {
-                              
-                              // TAMPILAN CARD (TABLET VIEW)
                               if (isTabletView) {
                                   return (
                                     <div 
@@ -303,7 +449,6 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
                                   );
                               }
 
-                              // TAMPILAN LIST (PC VIEW)
                               return (
                                 <div 
                                     key={po.id} 
@@ -332,7 +477,6 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
           </div>
 
           {/* --- RIGHT PANEL: DETAIL & ACTION --- */}
-          {/* Logic: Show if selectedPO exists. In Tablet view, it takes full width/height. In PC view, it sits on right. */}
           <div className={`
               flex-1 flex-col bg-gray-50 overflow-hidden relative
               ${selectedPO && isTabletView ? 'flex' : (isTabletView ? 'hidden' : 'hidden md:flex')}
@@ -340,7 +484,7 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
               {selectedPO ? (
                   <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
                     
-                    {/* DETAIL HEADER (Mobile Back Button support) */}
+                    {/* DETAIL HEADER */}
                     {(isTabletView) && (
                         <div className="bg-white p-4 border-b border-gray-200 flex items-center gap-3">
                             <button onClick={() => setSelectedPO(null)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 text-gray-700">
@@ -380,22 +524,23 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
                                 <div className="bg-blue-50 px-6 py-3 flex items-center gap-3 border-b border-blue-100">
                                     <AlertCircle className="w-5 h-5 text-blue-600"/>
                                     <p className="text-sm text-blue-800">
-                                        Masukkan jumlah barang yang <b>baru sampai hari ini</b> di kolom "Terima Sekarang". <br/>
-                                        Stok akan otomatis berpindah dari <b>Stok PO</b> ke <b>Stok Fisik (Current)</b>.
+                                        Klik pada baris produk untuk melihat <b>Riwayat Penerimaan</b>. <br/>
+                                        Barang yang diterima akan diproses dengan prioritas <b>PO Customer</b> terlebih dahulu, sisanya masuk ke <b>Stok Fisik</b>.
                                     </p>
                                 </div>
                             )}
 
                             {/* Table Items */}
                             <div className="p-6 overflow-x-auto">
-                                <table className="w-full text-sm min-w-[600px]">
+                                <table className="w-full text-sm min-w-[700px]">
                                     <thead>
                                         <tr className="bg-gray-100 text-gray-600 uppercase tracking-wider text-xs font-bold text-left">
                                             <th className="p-3 rounded-l-lg">Nama Produk</th>
                                             <th className="p-3 text-center">Unit</th>
-                                            <th className="p-3 text-center">Total Pesan</th>
-                                            <th className="p-3 text-center">Sdh Diterima</th>
-                                            <th className="p-3 text-center">Sisa PO</th>
+                                            <th className="p-3 text-center">Total Pesanan</th>
+                                            <th className="p-3 text-center">PO Customer</th>
+                                            <th className="p-3 text-center">Sudah Diterima</th>
+                                            <th className="p-3 text-center">Sisa</th>
                                             <th className="p-3 text-center w-40 rounded-r-lg bg-blue-100 text-blue-800">Terima Sekarang</th>
                                         </tr>
                                     </thead>
@@ -404,40 +549,99 @@ const StockInPage: React.FC<StockInPageProps> = ({ setIsSidebarOpen }) => {
                                             const sisa = item.qtyOrdered - item.qtyReceived;
                                             const isComplete = sisa === 0;
                                             const isTransactionLocked = selectedPO.status === 'COMPLETED' || selectedPO.status === 'FORCED_COMPLETE';
+                                            const isExpanded = expandedItemId === item.id;
                                             
                                             return (
-                                                <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="p-3 font-medium text-gray-800 flex items-center gap-3">
-                                                        <div className="p-2 bg-gray-100 rounded-md"><Package className="w-4 h-4 text-gray-500"/></div>
-                                                        {item.name}
-                                                    </td>
-                                                    <td className="p-3 text-center font-bold text-gray-500">{item.unit}</td>
-                                                    <td className="p-3 text-center font-bold">{item.qtyOrdered}</td>
-                                                    <td className="p-3 text-center text-green-600 font-bold">{item.qtyReceived}</td>
-                                                    <td className="p-3 text-center text-orange-600 font-bold">{sisa}</td>
-                                                    <td className="p-3 text-center bg-blue-50/30">
-                                                        {isComplete ? (
-                                                            <span className="text-green-600 font-bold flex justify-center items-center gap-1"><CheckCircle className="w-4 h-4"/> Lunas</span>
-                                                        ) : (
-                                                            isTransactionLocked ? (
-                                                                <span className="text-gray-400 font-bold">-</span>
-                                                            ) : (
-                                                                <div className="relative">
-                                                                    <input 
-                                                                        type="number" 
-                                                                        min="0"
-                                                                        max={sisa}
-                                                                        value={item.qtyIncoming === 0 ? '' : item.qtyIncoming}
-                                                                        onChange={(e) => handleQtyChange(item.id, e.target.value)}
-                                                                        className="w-full border border-blue-300 rounded-lg px-3 py-2 text-center font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                                        placeholder="0"
-                                                                    />
-                                                                    <div className="text-[10px] text-gray-400 mt-1">Max: {sisa}</div>
+                                                <React.Fragment key={item.id}>
+                                                    {/* Baris Utama Produk */}
+                                                    <tr 
+                                                        onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                                                        className={`cursor-pointer transition-colors ${isExpanded ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}
+                                                    >
+                                                        <td className="p-3 font-medium text-gray-800">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="p-2 bg-gray-100 rounded-md">
+                                                                    {isExpanded ? <ChevronUp className="w-4 h-4 text-blue-600"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
                                                                 </div>
-                                                            )
-                                                        )}
-                                                    </td>
-                                                </tr>
+                                                                <div>
+                                                                    <div className="font-bold">{item.name}</div>
+                                                                    <div className="text-[10px] text-blue-600 font-bold flex items-center gap-1">
+                                                                        <History className="w-3 h-3"/> Lihat History
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 text-center font-bold text-gray-500">{item.unit}</td>
+                                                        <td className="p-3 text-center font-bold text-gray-700">{item.qtyOrdered}</td>
+                                                        <td className="p-3 text-center font-bold text-gray-700">{item.qtyCustomerPO}</td>
+                                                        <td className="p-3 text-center text-green-600 font-bold">{item.qtyReceived}</td>
+                                                        <td className="p-3 text-center text-orange-600 font-bold">{sisa}</td>
+                                                        <td className="p-3 text-center bg-blue-50/30" onClick={(e) => e.stopPropagation()}>
+                                                            {isComplete ? (
+                                                                <span className="text-green-600 font-bold flex justify-center items-center gap-1"><CheckCircle className="w-4 h-4"/> Lunas</span>
+                                                            ) : (
+                                                                isTransactionLocked ? (
+                                                                    <span className="text-gray-400 font-bold">-</span>
+                                                                ) : (
+                                                                    <div className="relative">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            min="0"
+                                                                            max={sisa}
+                                                                            value={item.qtyIncoming === 0 ? '' : item.qtyIncoming}
+                                                                            onChange={(e) => handleQtyChange(item.id, e.target.value)}
+                                                                            className="w-full border border-blue-300 rounded-lg px-3 py-2 text-center font-bold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                                            placeholder="0"
+                                                                        />
+                                                                        <div className="text-[10px] text-gray-400 mt-1 text-center">Max: {sisa}</div>
+                                                                    </div>
+                                                                )
+                                                            )}
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* Baris History (Expandable) */}
+                                                    {isExpanded && (
+                                                        <tr className="bg-gray-50 animate-in slide-in-from-top-2 duration-200">
+                                                            <td colSpan={7} className="p-4 border-l-4 border-l-blue-500">
+                                                                <div className="flex flex-col gap-2">
+                                                                    <div className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2 mb-1">
+                                                                        <History className="w-3 h-3"/> Riwayat Penerimaan Produk: {item.name}
+                                                                    </div>
+                                                                    {item.history.length === 0 ? (
+                                                                        <p className="text-sm text-gray-400 italic">Belum ada riwayat penerimaan untuk barang ini.</p>
+                                                                    ) : (
+                                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                                                            {item.history.map((h, idx) => (
+                                                                                <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <Calendar className="w-4 h-4 text-blue-500"/>
+                                                                                            <span className="text-sm font-semibold text-gray-700">{h.date}</span>
+                                                                                        </div>
+                                                                                        <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
+                                                                                            +{h.qty} {item.unit}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    {h.refSalesNo && h.customerName && (
+                                                                                        <div className="text-xs text-blue-600 font-semibold mt-2 pt-2 border-t border-gray-100">
+                                                                                            {h.refSalesNo} - {h.customerName}
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {!h.refSalesNo && h.customerName && (
+                                                                                        <div className="text-xs text-gray-600 font-semibold mt-2 pt-2 border-t border-gray-100">
+                                                                                            {h.customerName}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
                                             );
                                         })}
                                     </tbody>

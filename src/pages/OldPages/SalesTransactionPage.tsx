@@ -5,7 +5,7 @@ import { getFormattedDate, getFormattedCurrency } from '../../utils/formatting';
 import authenticatedAxios from '../../utils/api';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { type SalesTransaction } from '../../interfaces/sales';
-import ConfirmationModal from '../../components/ConfirmationModal';
+import ConfirmationModal from '../../components/OldComponents/ConfirmationModal';
 
 const SalesTransactionPage: React.FC = () => {
   const [transactions, setTransactions] = useState<SalesTransaction[]>([]);

@@ -3,7 +3,7 @@ import { collection, onSnapshot, QueryDocumentSnapshot, type DocumentData } from
 import { db } from '../../firebaseConfig';
 import AddProductForm from '../../forms/AddProductForm';
 import AddStockPanel from '../../forms/AddStockPanel';
-import ProductDetailModal from '../../components/ProductDetailModal';
+import ProductDetailModal from '../../components/OldComponents/ProductDetailModal';
 import { getFormattedCurrency, getFormattedNumber } from '../../utils/formatting';
 import { type StockDetail } from '../../interfaces/stock';
 

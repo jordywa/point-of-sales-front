@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Menu, Printer, Scale, TrendingUp, Landmark, Wallet, AlertCircle, Calendar } from 'lucide-react';
-import { INITIAL_INVENTORY_DATA } from '../data/mockData';
+import { INITIAL_INVENTORY_DATA } from '../../data/mockData';
 
 interface LaporanNeracaPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;

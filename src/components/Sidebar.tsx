@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { 
   ShoppingCart, Package, ArrowDownToLine, 
   ShoppingCart as CartIcon, DollarSign, Settings, FileText, 
-  Store, ChevronDown, ChevronUp, PieChart, TrendingUp, Wallet, Scale, 
-  FileBarChart, Printer, Database, Banknote, Users, ClipboardCheck, LayoutDashboard
+  Store, ChevronDown, ChevronUp, PieChart, TrendingUp, Wallet, 
+  FileBarChart, Printer, Database, Banknote, Users, LayoutDashboard
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -28,7 +28,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpen, acti
     { id: 'STOK_IN', label: 'Stok Masuk', icon: ArrowDownToLine, color: 'text-cyan-600' },
     
     // Menu Stock Opname
-    { id: 'STOCK_OPNAME', label: 'Stock Opname', icon: ClipboardCheck, color: 'text-purple-600' },
+    // { id: 'STOCK_OPNAME', label: 'Stock Opname', icon: ClipboardCheck, color: 'text-purple-600' },
 
     { id: 'INPUT_PENGELUARAN', label: 'Biaya Operasional', icon: Banknote, color: 'text-pink-600' },
     
@@ -36,6 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpen, acti
     { id: 'PENGGAJIAN', label: 'Penggajian', icon: Users, color: 'text-green-600' },
 
     { id: 'KEUANGAN', label: 'Hutang / Piutang', icon: DollarSign, color: 'text-red-500' },
+    { id: 'POTONG_KASBON', label: 'Potong Kasbon', icon: Wallet, color: 'text-purple-600' },
   ];
 
   // 2. Sub-menu Laporan
@@ -47,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpen, acti
     { id: 'LAPORAN_PEMBELIAN', label: 'Lap. Pembelian', icon: CartIcon, color: 'text-orange-500' },
     { id: 'LAPORAN_PENGELUARAN', label: 'Lap. Pengeluaran', icon: Wallet, color: 'text-red-500' },
     { id: 'LAPORAN_LABA_RUGI', label: 'Laba Rugi', icon: PieChart, color: 'text-purple-500' },
-    { id: 'LAPORAN_NERACA', label: 'Neraca', icon: Scale, color: 'text-teal-600' },
+    // { id: 'LAPORAN_NERACA', label: 'Neraca', icon: Scale, color: 'text-teal-600' },
   ];
 
   // 3. Sub-menu Pengaturan
@@ -76,7 +77,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpen, acti
       <div 
         className={`fixed top-0 left-0 bottom-0 z-50 w-64 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
-        <div className="h-16 flex items-center px-6 bg-[#E6F4FF] border-b border-blue-100 shrink-0">
+        <div className="h-16 flex items-center px-6 bg-[#E6F4FF] border-b border-blue-100 flex-shrink-0">
            <h1 className="font-bold text-lg text-black">POS SYSTEM</h1>
         </div>
 
@@ -168,7 +169,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isSidebarOpen, setIsSidebarOpen, acti
 
         </div>
 
-        <div className="p-4 border-t border-gray-100 bg-white shrink-0">
+        <div className="p-4 border-t border-gray-100 bg-white flex-shrink-0">
              <div className="flex items-center gap-3 text-gray-500">
                  <div className="bg-blue-50 p-2 rounded-full text-blue-600"><Store size={18}/></div>
                  <div className="text-xs">

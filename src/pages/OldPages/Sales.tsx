@@ -1,10 +1,10 @@
 import { getFormattedCurrency, getFormattedNumber } from '../../utils/formatting';
-import SalesPaymentModal from '../../components/SalesPaymentModal';
+import SalesPaymentModal from '../../components/OldComponents/SalesPaymentModal';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, onSnapshot, type DocumentData } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { CircleMinus, CirclePlus, Trash } from 'lucide-react';
-import FormattedNumberInput from '../../components/FormattedNumberInput';
+import FormattedNumberInput from '../../components/OldComponents/FormattedNumberInput';
 
 interface CartItem {
   productId: string;

@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Menu, TrendingUp, TrendingDown, DollarSign, ShoppingCart, 
-  Package, Calendar, ArrowUpRight, ArrowDownRight, Users, 
+  Menu, TrendingUp, DollarSign, ShoppingCart, 
+  Package, ArrowUpRight, ArrowDownRight,
   Wallet, CreditCard, User, Truck, AlertTriangle, ArrowRight 
 } from 'lucide-react';
+import DateRangePicker, { type DateRange } from '../../components/DateRangePicker';
 
 interface DashboardPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
@@ -13,11 +14,36 @@ interface DashboardPageProps {
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ setIsSidebarOpen }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange | null>(null);
 
   // Simulasi Loading Data
+  // # woi back end jordy: Fetch data dashboard dari database
+  // GET /api/dashboard/summary - untuk summaryCards (total penjualan, keuntungan, transaksi, piutang, hutang, stok menipis)
+  // GET /api/dashboard/top-products - untuk topProducts
+  // GET /api/dashboard/low-stock - untuk lowStockItems
+  // GET /api/dashboard/sales-chart - untuk salesChartData
+  // NOTE: Gunakan dateRange untuk filter data berdasarkan tanggal yang dipilih
   useEffect(() => {
     setTimeout(() => setIsLoading(false), 800);
   }, []);
+
+  // Handler untuk date range change
+  // # woi back end jordy: Refetch data berdasarkan date range yang dipilih
+  // GET /api/dashboard/* dengan query params startDate dan endDate
+  // Contoh: fetchDashboardData(range.startDate, range.endDate);
+  const handleDateRangeChange = (range: DateRange) => {
+    setDateRange(range);
+    console.log('Date range changed:', range);
+  };
+
+  // # woi back end jordy: Fetch data berdasarkan dateRange saat dateRange berubah
+  // GET /api/dashboard/* dengan query params startDate dan endDate dari dateRange
+  useEffect(() => {
+    if (dateRange) {
+      // TODO: Implementasi fetch data berdasarkan dateRange
+      // fetchDashboardData(dateRange.startDate, dateRange.endDate);
+    }
+  }, [dateRange]);
 
   // --- DATA DUMMY DASHBOARD ---
   const summaryCards = [
@@ -136,10 +162,35 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ setIsSidebarOpen }) => {
               <p className="text-sm text-gray-500">Ringkasan performa toko hari ini</p>
             </div>
         </div>
-        <div className="hidden md:flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600">
-          <Calendar className="w-4 h-4"/>
-          <span>{new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
-        </div>
+        <DateRangePicker
+          onChange={handleDateRangeChange}
+          // ===== KONFIGURASI DEFAULT DATE RANGE =====
+          // Default: null (belum ada tanggal terpilih)
+          // User harus klik tanggal 1, lalu klik tanggal 2 untuk membuat range
+          // Jika ingin set default range, gunakan props defaultRange:
+          // 
+          // Contoh 1: Set default ke minggu ini
+          // const today = new Date();
+          // const startOfWeek = new Date(today);
+          // startOfWeek.setDate(today.getDate() - today.getDay());
+          // const endOfWeek = new Date(startOfWeek);
+          // endOfWeek.setDate(startOfWeek.getDate() + 6);
+          // defaultRange={{ startDate: startOfWeek, endDate: endOfWeek }}
+          //
+          // Contoh 2: Set default ke bulan ini
+          // const today = new Date();
+          // const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+          // const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          // defaultRange={{ startDate: firstDay, endDate: lastDay }}
+          //
+          // Contoh 3: Set default ke 7 hari terakhir
+          // const today = new Date();
+          // today.setHours(23, 59, 59, 999);
+          // const sevenDaysAgo = new Date(today);
+          // sevenDaysAgo.setDate(today.getDate() - 7);
+          // sevenDaysAgo.setHours(0, 0, 0, 0);
+          // defaultRange={{ startDate: sevenDaysAgo, endDate: today }}
+        />
       </div>
 
       {/* CONTENT */}
@@ -205,7 +256,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({ setIsSidebarOpen }) => {
                      <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-black text-white text-xs py-1 px-2 rounded mb-2 whitespace-nowrap z-10">
                         {data.value} Transaksi
                      </div>
-                     <div className={`w-full max-w-10 ${data.height} bg-blue-100 rounded-t-lg group-hover:bg-blue-500 transition-colors relative`}></div>
+                     <div className={`w-full max-w-[40px] ${data.height} bg-blue-100 rounded-t-lg group-hover:bg-blue-500 transition-colors relative`}></div>
                   </div>
                   <span className="text-xs font-bold text-gray-500">{data.day}</span>
                 </div>

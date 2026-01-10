@@ -5,26 +5,27 @@ import Sidebar from './components/Sidebar';
 // import LoginPage from './pages/LoginPage';
 
 // Import Halaman
-import KasirPage from './pages/KasirPage';
-import DashboardPage from './pages/DashboardPage'; // <--- [BARU] Import Dashboard
-import InventoryPage from './pages/InventoryPage';
-import StockInPage from './pages/StockInPage';
-import StockOpnamePage from './pages/StockOpnamePage';
-import PembelianPage from './pages/PembelianPage';
-import FinancePage from './pages/FinancePage';
+import KasirPage from './pages/Transaction/KasirPage';
+import DashboardPage from './pages/Dashboard/DashboardPage'; // <--- [BARU] Import Dashboard
+import InventoryPage from './pages/Inventory_Stock/InventoryPage';
+import StockInPage from './pages/Inventory_Stock/StockInPage';
+import StockOpnamePage from './pages/Inventory_Stock/StockOpnamePage';
+import PembelianPage from './pages/Transaction/PembelianPage';
+import HutangPiutangPage from './pages/Finance/HutangPiutangPage';
 import MasterSettingPage from './pages/MasterSetting';
-import TemplateNotaPage from './pages/TemplateNotaPage';
-import TemplateFakturPage from './pages/TemplateFakturPage';
-import PrinterSettingPage from './pages/PrinterSettingPage';
-import InputPengeluaranPage from './pages/InputPengeluaranPage';
-import PenggajianPage from './pages/PenggajianPage'; 
-import LaporanPenjualanPage from './pages/LaporanPenjualanPage';
-import LaporanPembelianPage from './pages/LaporanPembelianPage';
-import LaporanPengeluaranPage from './pages/LaporanPengeluaranPage';
-import LaporanLabaRugiPage from './pages/LaporanLabaRugiPage';
-import LaporanNeracaPage from './pages/LaporanNeracaPage';
+import TemplateNotaPage from './pages/Template_Other/TemplateNotaPage';
+import TemplateFakturPage from './pages/Template_Other/TemplateFakturPage';
+import PrinterSettingPage from './pages/Template_Other/PrinterSettingPage';
+import InputPengeluaranPage from './pages/Finance/InputPengeluaranPage';
+import PenggajianPage from './pages/Finance/PenggajianPage'; 
+import LaporanPenjualanPage from './pages/Dashboard/LaporanPenjualanPage';
+import LaporanPembelianPage from './pages/Dashboard/LaporanPembelianPage';
+import LaporanPengeluaranPage from './pages/Dashboard/LaporanPengeluaranPage';
+import LaporanLabaRugiPage from './pages/Dashboard/LaporanLabaRugiPage';
+import LaporanNeracaPage from './pages/Dashboard/LaporanNeracaPage';
 import LoginAdmin from './pages/LoginAdmin';
 import { useAuth } from './context/AuthContext';
+import PotongKasbonPage from './pages/Finance/PotongKasbonPage';
 
 const App: React.FC = () => {
     const {isAuthenticated, loading} = useAuth();
@@ -47,33 +48,35 @@ const App: React.FC = () => {
       else if (path.includes('finance')) setActiveMenu('KEUANGAN');
       else if (path.includes('input-pengeluaran')) setActiveMenu('INPUT_PENGELUARAN');
       else if (path.includes('penggajian')) setActiveMenu('PENGGAJIAN'); 
+      else if (path.includes('potong-kasbon')) setActiveMenu('POTONG_KASBON');
       else if (path.includes('settings')) setActiveMenu('MASTER_SETTING');
     }, [location]);
 
-    const handleMenuChange = (menu: string) => {
-      setActiveMenu(menu);
-      switch (menu) {
-        case 'KASIR': navigate('/kasir'); break;
-        case 'DASHBOARD': navigate('/dashboard'); break; // <--- [BARU] Navigasi Dashboard
-        case 'INVENTORY': navigate('/inventory'); break;
-        case 'STOK_IN': navigate('/stock-in'); break;
-        case 'STOCK_OPNAME': navigate('/stock-opname'); break;
-        case 'PEMBELIAN': navigate('/pembelian'); break;
-        case 'KEUANGAN': navigate('/finance'); break;
-        case 'INPUT_PENGELUARAN': navigate('/input-pengeluaran'); break;
-        case 'PENGGAJIAN': navigate('/penggajian'); break; 
-        case 'LAPORAN_PENJUALAN': navigate('/laporan-penjualan'); break;
-        case 'LAPORAN_PEMBELIAN': navigate('/laporan-pembelian'); break;
-        case 'LAPORAN_PENGELUARAN': navigate('/laporan-pengeluaran'); break;
-        case 'LAPORAN_LABA_RUGI': navigate('/laporan-laba-rugi'); break;
-        case 'LAPORAN_NERACA': navigate('/laporan-neraca'); break;
-        case 'MASTER_SETTING': navigate('/settings'); break;
-        case 'TEMPLATE_NOTA': navigate('/template-nota'); break;
-        case 'TEMPLATE_FAKTUR': navigate('/template-faktur'); break;
-        case 'PENGATURAN_PRINTER': navigate('/printer-settings'); break;
-        default: navigate('/kasir');
-      }
-    };
+  const handleMenuChange = (menu: string) => {
+    setActiveMenu(menu);
+    switch (menu) {
+      case 'KASIR': navigate('/kasir'); break;
+      case 'DASHBOARD': navigate('/dashboard'); break; // <--- [BARU] Navigasi Dashboard
+      case 'INVENTORY': navigate('/inventory'); break;
+      case 'STOK_IN': navigate('/stock-in'); break;
+      case 'STOCK_OPNAME': navigate('/stock-opname'); break;
+      case 'PEMBELIAN': navigate('/pembelian'); break;
+      case 'KEUANGAN': navigate('/finance'); break;
+      case 'INPUT_PENGELUARAN': navigate('/input-pengeluaran'); break;
+      case 'PENGGAJIAN': navigate('/penggajian'); break; 
+      case 'POTONG_KASBON': navigate('/potong-kasbon'); break;
+      case 'LAPORAN_PENJUALAN': navigate('/laporan-penjualan'); break;
+      case 'LAPORAN_PEMBELIAN': navigate('/laporan-pembelian'); break;
+      case 'LAPORAN_PENGELUARAN': navigate('/laporan-pengeluaran'); break;
+      case 'LAPORAN_LABA_RUGI': navigate('/laporan-laba-rugi'); break;
+      case 'LAPORAN_NERACA': navigate('/laporan-neraca'); break;
+      case 'MASTER_SETTING': navigate('/settings'); break;
+      case 'TEMPLATE_NOTA': navigate('/template-nota'); break;
+      case 'TEMPLATE_FAKTUR': navigate('/template-faktur'); break;
+      case 'PENGATURAN_PRINTER': navigate('/printer-settings'); break;
+      default: navigate('/kasir');
+    }
+  };
 
     if (loading) {
         return (
@@ -118,9 +121,10 @@ const App: React.FC = () => {
                                 <Route path="/stock-in" element={<StockInPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/stock-opname" element={<StockOpnamePage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/pembelian" element={<PembelianPage setIsSidebarOpen={setIsSidebarOpen} formatRupiah={formatRupiah} />} />
-                                <Route path="/finance" element={<FinancePage setIsSidebarOpen={setIsSidebarOpen} />} />
+                                <Route path="/finance" element={<HutangPiutangPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/input-pengeluaran" element={<InputPengeluaranPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/penggajian" element={<PenggajianPage setIsSidebarOpen={setIsSidebarOpen} />} />
+                                <Route path="/potong-kasbon" element={<PotongKasbonPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/laporan-penjualan" element={<LaporanPenjualanPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/laporan-pembelian" element={<LaporanPembelianPage setIsSidebarOpen={setIsSidebarOpen} />} />
                                 <Route path="/laporan-pengeluaran" element={<LaporanPengeluaranPage setIsSidebarOpen={setIsSidebarOpen} />} />

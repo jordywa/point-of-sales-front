@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, QueryDocumentSnapshot, type DocumentData } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import SearchableDropdown from '../components/SearchableDropdown';
-import FormattedNumberInput from '../components/FormattedNumberInput';
-import ExpiredDateInput from '../components/ExpiredDateInput';
+import SearchableDropdown from '../components/OldComponents/SearchableDropdown';
+import FormattedNumberInput from '../components/OldComponents/FormattedNumberInput';
+import ExpiredDateInput from '../components/OldComponents/ExpiredDateInput';
 import authenticatedAxios from '../utils/api';
 
 

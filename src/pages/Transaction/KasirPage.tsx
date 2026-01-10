@@ -1,30 +1,29 @@
-// src/pages/PembelianPage.tsx
+// src/pages/KasirPage.tsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, ScanLine, Menu, History, User, Trash2, Edit2, X, ShoppingCart, Calculator, QrCode, ArrowLeft, Check, LayoutGrid, List, ChevronDown, Plus, Truck, Calendar, Mail, Printer, Pencil, LogOut, Key, ChevronUp, Package, Building2 } from 'lucide-react';
-import type { Product, CartItem, DraftTransaction, Supplier } from '../types/index';
-import { PRODUCTS, INITIAL_SUPPLIERS } from '../data/mockData';
-
-// Interface Draft khusus Pembelian (menggunakan Supplier)
-interface DraftPurchase extends Omit<DraftTransaction, 'customer'> {
-  customer: Supplier | null; 
-}
+import { Search, ScanLine, Menu, History, User, Trash2, Edit2, X, ShoppingCart, Calculator, QrCode, ArrowLeft, Check, LayoutGrid, List, ChevronDown, Plus, Calendar, Mail, Printer, Pencil, LogOut, Key } from 'lucide-react';
+import type { Product, CartItem, DraftTransaction, Customer, Supplier } from '../../types/index';
+import { PRODUCTS, INITIAL_CUSTOMERS, INITIAL_SUPPLIERS } from '../../data/mockData';
+import { useAuth } from '../../context/AuthContext';
 
 interface ExtendedCartItem extends CartItem {
-  qtyPO?: number; // Qty Kredit/Tempo
+  qtyPO?: number;    // Qty yang masuk PO (Hutang Barang)
 }
 
-interface PembelianPageProps {
+interface KasirPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
   formatRupiah: (num: number) => string;
 }
 
-const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatRupiah }) => {
+const KasirPage: React.FC<KasirPageProps> = ({ setIsSidebarOpen, formatRupiah }) => {
+
+  const {logout} = useAuth();
+
   // --- STATE RESPONSIVE MOBILE ---
   const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
 
-  // --- STATE MODE TRANSAKSI (PEMBELIAN / PEMBELIAN PO) ---
-  const [transactionMode, setTransactionMode] = useState<'TUNAI' | 'KREDIT'>('TUNAI');
+  // --- STATE MODE TRANSAKSI (SALES / PO) ---
+  const [transactionMode, setTransactionMode] = useState<'SALES' | 'PO'>('SALES');
   const [isTransactionMenuOpen, setIsTransactionMenuOpen] = useState(false);
 
   // --- UI VIEW MODE ---
@@ -53,12 +52,12 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   // State Pilihan di LIST VIEW
   const [listSelections, setListSelections] = useState<Record<string, { variant: string, unit: string, qty: number, note: string }>>({});
 
-  // --- State Edit Harga Beli (Numpad) ---
+  // --- State Edit Harga (Numpad) ---
   const [editingPriceId, setEditingPriceId] = useState<number | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>("0");
   const [editingPriceTouched, setEditingPriceTouched] = useState<boolean>(false);
 
-  // --- State Edit Note ---
+  // --- State Edit Note (Keterangan) di Cart ---
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteValue, setEditingNoteValue] = useState<string>("");
   
@@ -67,21 +66,22 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   const [activeDraftId, setActiveDraftId] = useState<number | null>(null);
 
   // --- State Draft & History ---
-  const [draftTransactions, setDraftTransactions] = useState<DraftPurchase[]>([]);
+  // #WOIJORDY BACK END WOI: Fetch data Draft Transaction yang statusnya 'PENDING' dari database saat halaman dimuat
+  const [draftTransactions, setDraftTransactions] = useState<DraftTransaction[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
   // --- LOGIC NO NOTA OTOMATIS (FIXED & RECYCLED) ---
   const [transactionCount, setTransactionCount] = useState(1);
   const [currentInvoiceNo, setCurrentInvoiceNo] = useState("");
-  const [recycledInvoiceNumbers, setRecycledInvoiceNumbers] = useState<string[]>([]); // Menyimpan nomor nota yang dihapus
+  const [recycledInvoiceNumbers, setRecycledInvoiceNumbers] = useState<string[]>([]);
 
-  // Helper untuk generate nomor nota PO
+  // Helper untuk generate nomor nota berdasarkan count
   const generateInvoiceNumber = (count: number) => {
+    // #WOIJORDY BACK END WOI: Request ke API untuk get next sequence number invoice. Format: SOYYYYMM/xxxxxx
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    // Format: POYYYYMM/xxxxxx
-    return `PO${year}${month}/${String(count).padStart(6, '0')}`;
+    return `SO${year}${month}/${String(count).padStart(6, '0')}`;
   };
 
   // Update Invoice No saat component mount, transactionCount berubah, atau ada nomor recycle
@@ -133,20 +133,21 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     };
   }, []);
 
-  // --- SUPPLIER LOGIC ---
-  const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
-  const [isNewSupplierModalOpen, setIsNewSupplierModalOpen] = useState(false);
-  const [supplierSearch, setSupplierSearch] = useState("");
+  // --- STATE CUSTOMER ---
+  // #WOIJORDY BACK END WOI: Fetch list semua customer dari database saat halaman ini diload
+  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isNewCustomerModalOpen, setIsNewCustomerModalOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState("");
 
-  // --- State Form New Supplier ---
-  const [newSuppName, setNewSuppName] = useState("");
-  const [newSuppPhone, setNewSuppPhone] = useState("");
-  const [newSuppContact, setNewSuppContact] = useState(""); // Contact Person
-  const [newSuppEmail, setNewSuppEmail] = useState("");
-  const [newSuppAddress, setNewSuppAddress] = useState("");
-  const [newSuppNameError, setNewSuppNameError] = useState(false);
+  // --- State Form New Customer ---
+  const [newCustName, setNewCustName] = useState("");
+  const [newCustPhone, setNewCustPhone] = useState("");
+  const [newCustEmail, setNewCustEmail] = useState("");
+  const [newCustGender, setNewCustGender] = useState<'L'|'P'|null>(null);
+  const [newCustDob, setNewCustDob] = useState("");
+  const [newCustNameError, setNewCustNameError] = useState(false);
 
   // --- STATE PEMBAYARAN ---
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -156,37 +157,30 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   const [paymentNumpadValue, setPaymentNumpadValue] = useState("0");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
   
-  // --- STATE KHUSUS HUTANG / JATUH TEMPO ---
+  // --- STATE KHUSUS HUTANG (PO) ---
   const [jatuhTempoDate, setJatuhTempoDate] = useState("");
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
 
+  // #WOIJORDY BACK END WOI: Implementasi search produk via API (Server-side filtering recommended jika data produk banyak)
   const filteredProducts = PRODUCTS.filter((product) =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredSuppliers = suppliers.filter((supp) => 
-    supp.name.toLowerCase().includes(supplierSearch.toLowerCase()) || 
-    supp.phone.includes(supplierSearch)
+  const filteredCustomers = customers.filter((cust) => 
+    cust.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
+    cust.phone.includes(customerSearch)
   );
 
-  // SUBTOTAL
+  // SUBTOTAL: Menghitung Qty Fisik + Qty PO
   const subTotal = cart.reduce((acc, item) => {
       const totalQtyItem = item.qty + (item.qtyPO || 0);
       return acc + (item.price * totalQtyItem);
   }, 0);
-
+  
   // Logic Sisa Tagihan 
   const isHutang = selectedPaymentMethod === 'HUTANG';
   const sisaTagihan = isHutang ? 0 : Math.max(0, subTotal - paymentAmount);
   const kembalian = isHutang ? 0 : Math.max(0, paymentAmount - subTotal);
-
-  // --- HANDLER LOGOUT ---
-  const handleLogout = () => {
-    if(confirm("Apakah Anda yakin ingin logout?")) {
-        localStorage.removeItem('isLoggedIn');
-        window.dispatchEvent(new Event('auth-change'));
-    }
-  };
 
   const handleChangePassword = () => {
       alert("Fitur Ubah Password akan segera hadir!");
@@ -205,7 +199,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     });
   };
 
-  // Logic Add List View
+  // Logic Add List View (DEFAULT SELALU KE STOCK/QTY BIASA)
   const handleAddToListCart = (product: Product) => {
     const selection = getListSelection(product.id);
     const finalVariant = selection.variant || product.variants[0];
@@ -214,7 +208,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     const finalNote = selection.note || "";
 
     const unitObj = product.availableUnits.find(u => u.name === finalUnitName) || product.availableUnits[0];
-    const finalPrice = product.basePrice * unitObj.priceMultiplier; // Harga Beli Estimasi
+    const finalPrice = product.basePrice * unitObj.priceMultiplier;
 
     const newItem: ExtendedCartItem = {
         id: Date.now() + Math.random(), 
@@ -222,13 +216,14 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         name: product.name,
         price: finalPrice,
         image: product.image,
-        qty: finalQty, 
-        qtyPO: 0,      
+        qty: finalQty, // Masuk ke Qty Biasa (Stock Current)
+        qtyPO: 0,      // Qty PO 0 dulu
         unit: finalUnitName,
         size: finalVariant,
         note: finalNote
     };
     setCart([...cart, newItem]);
+
     updateListSelection(product.id, 'note', "");
   };
 
@@ -246,46 +241,46 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     ));
   };
 
-  // --- SUPPLIER LOGIC ---
-  const handleOpenNewSupplier = () => {
-    setIsSupplierModalOpen(false);
-    setIsNewSupplierModalOpen(true);
-    setNewSuppName("");
-    setNewSuppPhone("");
-    setNewSuppContact("");
-    setNewSuppAddress("");
-    setNewSuppEmail("");
-    setNewSuppNameError(false);
+  // --- CUSTOMER LOGIC ---
+  const handleOpenNewCustomer = () => {
+    setIsCustomerModalOpen(false);
+    setIsNewCustomerModalOpen(true);
+    setNewCustName("");
+    setNewCustPhone("");
+    setNewCustNameError(false);
   };
 
-  const handleSubmitNewSupplier = () => {
-    if (!newSuppName.trim()) {
-      setNewSuppNameError(true);
+  const handleSubmitNewCustomer = () => {
+    if (!newCustName.trim()) {
+      setNewCustNameError(true);
       return;
     }
-    const newSupplier: Supplier = {
+    const newCustomer: Customer = {
       id: Date.now(), 
-      name: newSuppName,
-      phone: newSuppPhone,
-      contact: newSuppContact,
-      email: newSuppEmail,
-      address: newSuppAddress
+      name: newCustName,
+      phone: newCustPhone,
+      email: newCustEmail,
+      gender: newCustGender || undefined,
+      dob: newCustDob,
+      points: 0
     };
     
-    setSuppliers([...suppliers, newSupplier]);
-    setSelectedSupplier(newSupplier);
-    setIsNewSupplierModalOpen(false);
+    // #WOIJORDY BACK END WOI: INSERT data customer baru ke database (POST /api/customers)
+    
+    setCustomers([...customers, newCustomer]);
+    setSelectedCustomer(newCustomer);
+    setIsNewCustomerModalOpen(false);
   };
 
-  const handleSelectSupplier = (supp: Supplier) => {
-    setSelectedSupplier(supp);
-    setIsSupplierModalOpen(false);
+  const handleSelectCustomer = (cust: Customer) => {
+    setSelectedCustomer(cust);
+    setIsCustomerModalOpen(false);
   };
 
-  // --- PRODUCT MODAL ---
+  // --- PRODUCT MODAL & CART LOGIC ---
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
-    setModalQty(1);
+    setModalQty(1); // Default Qty selalu 1 untuk Stock
     setModalUnit(product.availableUnits[0].name);
     setModalSize(product.variants[0]);
     setModalNote("");
@@ -313,10 +308,11 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
       note: modalNote
     };
     setCart([...cart, newItem]);
+    
     closeProductModal();
   };
   
-  // --- NOTE & PRICE EDIT ---
+  // --- NOTE EDIT LOGIC ---
   const startEditNote = (item: ExtendedCartItem) => {
     setEditingNoteId(item.id);
     setEditingNoteValue(item.note || "");
@@ -338,37 +334,39 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     if (cart.length === 0) return;
     const currentDate = new Date().toLocaleString('id-ID');
     
-    const newDraft: DraftPurchase = {
+    const newDraft: DraftTransaction = {
         id: activeDraftId || Date.now(),
         invoiceNumber: currentInvoiceNo, 
         items: [...cart],
         total: subTotal,
         date: currentDate,
-        customer: selectedSupplier 
+        customer: selectedCustomer 
     };
 
     if (activeDraftId !== null) {
+        // #WOIJORDY BACK END WOI: UPDATE data draft di database berdasarkan ID (PUT /api/drafts/{id})
         setDraftTransactions(prev => prev.map(d => d.id === activeDraftId ? newDraft : d));
     } else {
+        // #WOIJORDY BACK END WOI: INSERT data draft baru ke database (POST /api/drafts)
         setDraftTransactions(prev => [...prev, newDraft]);
     }
     
     const isNewTransaction = activeDraftId === null;
     if (isNewTransaction) {
         consumeInvoiceNumber();
-    }
+    } 
 
     setCart([]);
     setActiveDraftId(null);
-    setSelectedSupplier(null);
-    alert("Draft Pembelian tersimpan.");
+    setSelectedCustomer(null);
+    alert("Draft tersimpan.");
   };
 
-  const handleRestoreDraft = (draft: DraftPurchase) => {
+  const handleRestoreDraft = (draft: DraftTransaction) => {
     setCart([...draft.items]);
     setActiveDraftId(draft.id); 
-    if (draft.customer) setSelectedSupplier(draft.customer);
-    else setSelectedSupplier(null);
+    if (draft.customer) setSelectedCustomer(draft.customer);
+    else setSelectedCustomer(null);
     if (draft.invoiceNumber) setCurrentInvoiceNo(draft.invoiceNumber);
     setShowHistory(false);
   };
@@ -376,35 +374,37 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   const handleDeleteDraft = (e: React.MouseEvent, id: number) => {
     e.stopPropagation(); 
     if (window.confirm("Hapus draft ini?")) {
-        // Recycle logic
+        // #WOIJORDY BACK END WOI: DELETE data draft dari database (DELETE /api/drafts/{id})
         const draftToDelete = draftTransactions.find(d => d.id === id);
         if (draftToDelete) {
              setRecycledInvoiceNumbers(prev => [...prev, draftToDelete.invoiceNumber].sort());
         }
-
         setDraftTransactions(prev => prev.filter(d => d.id !== id));
         if (activeDraftId === id) setActiveDraftId(null);
     }
   };
 
-  // --- FINALISASI ---
-  const handleCetakPO = () => {
+  // --- CETAK BILL LOGIC ---
+  const handleCetakBill = () => {
     if (cart.length === 0) return;
-    handleSaveDraft(); // Simpan sebagai draft dulu / cetak struk
+    // #WOIJORDY BACK END WOI: Trigger fungsi print ke printer thermal (Kirim command ESC/POS atau generate struk image)
+    handleSaveDraft();
   };
 
-  const handleOpenFakturKredit = () => {
+  // --- LOGIC BARU: CETAK FAKTUR PO (MINTA TANGGAL DULU) ---
+  const handleCetakFakturPO = () => {
     if (cart.length === 0) return;
     setJatuhTempoDate(""); 
     setIsPOModalOpen(true);
   };
 
-  const handleFinalizeCredit = () => {
+  const handleFinalizePO = () => {
     if (!jatuhTempoDate) {
         alert("Harap isi Tanggal Jatuh Tempo!");
         return;
     }
-    
+
+    // #WOIJORDY BACK END WOI: INSERT Transaksi baru tipe 'KREDIT' (PO).
     const isNewTransaction = activeDraftId === null;
     if (activeDraftId !== null) {
         setDraftTransactions(prev => prev.filter(d => d.id !== activeDraftId));
@@ -417,16 +417,16 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     setSelectedPaymentMethod("");
     setActiveDraftId(null);
     setJatuhTempoDate("");
-    setSelectedSupplier(null);
+    setSelectedCustomer(null);
 
     if (isNewTransaction) {
         consumeInvoiceNumber();
     }
-
-    alert(`Pembelian PO (KREDIT) berhasil dicatat!\nJatuh Tempo: ${jatuhTempoDate}`);
+    
+    alert(`Faktur Penjualan KREDIT berhasil dicetak!\nJatuh Tempo tercatat: ${jatuhTempoDate}`);
   };
 
-  // --- PEMBAYARAN ---
+  // --- PEMBAYARAN LOGIC ---
   const startEditPrice = (id: number, price: number) => {
     setEditingPriceId(id);
     setEditingPriceValue(String(price));
@@ -513,8 +513,8 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   };
 
   const handleProcessPayment = () => {
-    if (selectedPaymentMethod === 'HUTANG' && !jatuhTempoDate) {
-        alert("Mohon isi Tanggal Jatuh Tempo untuk pembayaran HUTANG!");
+    if (selectedPaymentMethod === 'HUTANG' && transactionMode === 'PO' && !jatuhTempoDate) {
+        alert("Mohon isi tanggal jatuh tempo untuk PO!");
         return;
     }
     if (selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0) return;
@@ -524,6 +524,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   };
 
   const handleFinishTransaction = () => {
+    // #WOIJORDY BACK END WOI: INSERT Transaksi baru tipe 'TUNAI/LUNAS'.
     const isNewTransaction = activeDraftId === null;
     if (activeDraftId !== null) {
         setDraftTransactions(prev => prev.filter(d => d.id !== activeDraftId));
@@ -535,14 +536,14 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     setSelectedPaymentMethod("");
     setActiveDraftId(null);
     setJatuhTempoDate("");
-    setSelectedSupplier(null);
+    setSelectedCustomer(null);
 
     if (isNewTransaction) {
         consumeInvoiceNumber();
     }
   };
 
-  // --- QTY INCREMENT / DECREMENT ---
+  // --- QTY INCREMENT / DECREMENT LOGIC ---
   const incrementQty = (id: number) => {
     setCart(prev => prev.map(it => it.id === id ? { ...it, qty: it.qty + 1 } : it));
   };
@@ -568,7 +569,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   return (
     <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden relative bg-gray-50">
       
-      {/* AREA UTAMA (GRID/LIST PRODUK) */}
+      {/* AREA UTAMA (GRID/LIST PRODUK) - SEBELAH KIRI */}
       <div className={`w-full lg:flex-1 flex flex-col h-full border-r border-gray-300 relative z-0 transition-all ${isMobileCartOpen ? 'hidden lg:flex' : 'flex'}`}>
         
         {/* HEADER */}
@@ -579,7 +580,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
             <input 
               type="text" 
-              placeholder="Cari Produk..."
+              placeholder="Cari....."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-10 py-2 border border-black rounded-full focus:outline-none focus:border-blue-500 text-lg"
@@ -588,6 +589,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
             {!searchQuery && <ScanLine className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-black cursor-pointer" />}
           </div>
 
+          {/* VIEW MODE DROPDOWN (Ditambahkan Ref) */}
           <div className="relative" ref={viewDropdownRef}>
              <button onClick={() => setIsViewDropdownOpen(!isViewDropdownOpen)} className="flex items-center gap-2 bg-blue-100 px-3 py-2 rounded-lg text-blue-900 hover:bg-blue-200">
                 {viewMode === 'GRID' ? <LayoutGrid className="w-5 h-5"/> : <List className="w-5 h-5"/>}
@@ -621,11 +623,12 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
               </div>
           ) : (
               <div className="bg-white border border-gray-200 rounded-sm shadow-sm overflow-hidden">
+                 {/* Header Tabel List View */}
                  <div className="grid grid-cols-12 bg-gray-100 border-b border-gray-200 py-3 px-2 font-bold text-gray-700 text-xs uppercase tracking-wider text-center">
                     <div className="col-span-5 lg:col-span-3 text-left pl-2">Nama Produk</div>
                     <div className="col-span-3 lg:col-span-2 text-left">Varian</div>
                     <div className="col-span-1 hidden lg:block">Unit</div>
-                    <div className="col-span-2 lg:col-span-2 text-right pr-2 hidden lg:block">Harga Beli</div>
+                    <div className="col-span-2 lg:col-span-2 text-right pr-2 hidden lg:block">Harga</div>
                     <div className="col-span-3 hidden lg:block text-left pl-2">Keterangan</div>
                     <div className="col-span-4 lg:col-span-1">Aksi</div>
                  </div>
@@ -640,7 +643,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                      return (
                         <div key={product.id} className="grid grid-cols-12 border-b border-gray-100 py-2 px-2 items-center hover:bg-blue-50/50 transition-colors text-sm">
                             <div className="col-span-5 lg:col-span-3 pr-2 flex flex-col justify-center">
-                                <span className="font-medium text-gray-800 leading-tight whitespace-normal break-words">{product.name}</span>
+                                <span className="font-medium text-gray-800 leading-tight whitespace-normal wrap-break-word">{product.name}</span>
                                 <span className="lg:hidden text-xs text-green-600 font-bold">{formatRupiah(displayPrice)}</span>
                             </div>
                             <div className="col-span-3 lg:col-span-2 pr-1">
@@ -674,7 +677,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         {/* FLOATING ACTION BAR FOR MOBILE */}
         <div className="lg:hidden absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-3 flex items-center justify-between shadow-[0_-4px_10px_rgba(0,0,0,0.1)] z-20">
             <div className="flex flex-col">
-                <span className="text-xs text-gray-500">Total Beli</span>
+                <span className="text-xs text-gray-500">Total Belanja</span>
                 <span className="text-lg font-bold text-blue-600">{formatRupiah(subTotal)}</span>
             </div>
             <button 
@@ -685,19 +688,22 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                 <span>Keranjang ({cart.length})</span>
             </button>
         </div>
+
       </div>
 
-      {/* SIDEBAR KANAN (CART UTAMA) */}
+      {/* SIDEBAR KANAN (CART UTAMA) - SEBELAH KANAN */}
+      {/* KECIL (350px - 400px) SESUAI REQUEST AWAL */}
       <div className={`w-full lg:w-[350px] xl:w-[400px] bg-white flex-col h-full shadow-2xl z-10 border-l border-gray-200 transition-all ${isMobileCartOpen ? 'flex fixed inset-0 z-50 lg:static' : 'hidden lg:flex'}`}>
         
-        {/* HEADER SIDEBAR */}
+        {/* HEADER SIDEBAR (HISTORY & USER) - VERSI KECIL */}
         <div className="h-12 flex items-center justify-between lg:justify-end px-3 gap-3 border-b border-gray-200 relative shrink-0">
+         
          <button onClick={() => setIsMobileCartOpen(false)} className="lg:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
             <ArrowLeft className="w-6 h-6" />
          </button>
 
          <div className="flex items-center gap-3">
-            {/* HISTORY DROPDOWN */}
+            {/* HISTORY DROPDOWN (Ditambahkan Ref) */}
             <div className="relative" ref={historyMenuRef}>
             <button onClick={() => setShowHistory(!showHistory)} className="relative">
                 <History className="w-5 h-5 cursor-pointer hover:text-blue-500" />
@@ -708,7 +714,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
             {showHistory && (
                 <div className="absolute top-10 right-0 bg-white border border-gray-300 rounded-lg shadow-lg w-72 max-h-96 overflow-y-auto z-20">
                 <div className="bg-gray-100 p-3 border-b border-gray-200 font-semibold text-gray-700 text-sm">
-                    Riwayat Draft PO ({draftTransactions.length})
+                    Riwayat Draft ({draftTransactions.length})
                 </div>
                 {draftTransactions.length === 0 ? <div className="p-4 text-gray-500 text-center text-sm">Tidak ada draft</div> : (
                     <div>{draftTransactions.map(draft => (
@@ -727,7 +733,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
             )}
             </div>
             
-            {/* PROFILE DROPDOWN */}
+            {/* PROFILE DROPDOWN (Ditambahkan Ref) */}
             <div className="relative" ref={profileMenuRef}>
                 <button 
                     onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
@@ -742,7 +748,9 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                     <div className="absolute top-10 right-0 bg-white border border-gray-200 rounded-xl shadow-xl w-40 overflow-hidden z-50 animate-in fade-in zoom-in duration-200">
                         <div className="py-1">
                             <button onClick={handleChangePassword} className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center gap-2 text-gray-700 text-sm"><Key className="w-3 h-3 text-blue-500"/> Password</button>
-                            <button onClick={handleLogout} className="w-full text-left px-4 py-2 hover:bg-red-50 flex items-center gap-2 text-red-600 text-sm font-bold"><LogOut className="w-3 h-3"/> Log Out</button>
+                            <button onClick={() => logout()} className="w-full text-left px-4 py-2 hover:bg-red-50 flex items-center gap-2 text-red-600 text-sm font-bold">
+                              <LogOut className="w-3 h-3"/> Log Out
+                            </button>
                         </div>
                     </div>
                 )}
@@ -750,39 +758,39 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
          </div>
         </div>
 
-        {/* SUPPLIER SECTION & TRANSACTION DROPDOWN */}
+        {/* CUSTOMER SECTION & HEADER DROPDOWN TRANSACTION - VERSI KECIL */}
         <div 
           className="px-3 py-2 border-b border-black cursor-pointer hover:bg-gray-100 transition-colors bg-white group select-none shrink-0"
-          onClick={() => setIsSupplierModalOpen(true)}
-          title="Klik untuk ganti supplier"
+          onClick={() => setIsCustomerModalOpen(true)}
+          title="Klik untuk ganti customer"
         >
           <div className="flex items-center gap-2">
              <div className="border border-black rounded-full p-1 group-hover:border-blue-500 transition-colors">
-               <Building2 className="w-5 h-5 group-hover:text-blue-500 transition-colors" />
+               <User className="w-5 h-5 group-hover:text-blue-500 transition-colors" />
              </div>
              <div className="flex-1">
                
-               {/* TRANSACTION TYPE - FIXED OPTIONS */}
+               {/* TRANSACTION DROPDOWN (Ditambahkan Ref & Logika Klik Outside) */}
                <div className="relative text-center" ref={transactionMenuRef} onClick={(e) => e.stopPropagation()}>
                    <h2 
                       className="text-base font-bold text-center flex items-center justify-center gap-1 hover:text-blue-700 transition-colors select-none cursor-pointer"
                       onClick={() => setIsTransactionMenuOpen(!isTransactionMenuOpen)}
                    >
-                       {transactionMode === 'TUNAI' ? 'PEMBELIAN' : 'PEMBELIAN PO'}
+                       {transactionMode === 'SALES' ? 'PENJUALAN' : 'PENJUALAN KREDIT'}
                        <ChevronDown className="w-4 h-4"/>
                    </h2>
                    
                    {isTransactionMenuOpen && (
                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
-                           <button onClick={() => { setTransactionMode('TUNAI'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'TUNAI' ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}>PEMBELIAN</button>
-                           <button onClick={() => { setTransactionMode('KREDIT'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'KREDIT' ? 'text-yellow-600 bg-yellow-50' : 'text-gray-700'}`}>PEMBELIAN PO</button>
+                           <button onClick={() => { setTransactionMode('SALES'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'SALES' ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}>PENJUALAN</button>
+                           <button onClick={() => { setTransactionMode('PO'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'PO' ? 'text-yellow-600 bg-yellow-50' : 'text-gray-700'}`}>PENJUALAN KREDIT</button>
                        </div>
                    )}
                </div>
 
                <div className="flex justify-between text-xs items-center mt-0.5">
                  <span className="font-bold text-blue-800 truncate max-w-[150px]">
-                    {selectedSupplier ? selectedSupplier.name : "Pilih Supplier"}
+                    {selectedCustomer ? selectedCustomer.name : "Add Customer"}
                  </span>
                  <span className="font-bold">{currentInvoiceNo}</span>
                 </div>
@@ -790,10 +798,10 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
           </div>
         </div>
 
-        {/* HEADER TABEL CART */}
-        <div className={`grid grid-cols-12 gap-1 px-2 py-1 text-xs font-semibold border-b border-gray-300 text-center z-10 bg-white relative transition-colors shrink-0 ${transactionMode === 'KREDIT' ? 'bg-yellow-50' : ''}`}>
+        {/* HEADER TABEL CART - VERSI KECIL */}
+        <div className={`grid grid-cols-12 gap-1 px-2 py-1 text-xs font-semibold border-b border-gray-300 text-center z-10 bg-white relative transition-colors shrink-0 ${transactionMode === 'PO' ? 'bg-yellow-50' : ''}`}>
           <div className="col-span-1"></div>
-          {transactionMode === 'KREDIT' ? (
+          {transactionMode === 'PO' ? (
               <div className="col-span-3 grid grid-cols-2">
                 <div className="text-xs text-center">Qty</div>
                 <div className="text-xs text-orange-600 text-center">PO</div>
@@ -806,10 +814,10 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
           <div className="col-span-3 text-right text-xs">Total</div>
         </div>  
         
-        {/* LIST ITEM CART */}
+        {/* LIST ITEM CART UTAMA - VERSI KECIL */}
         <div className="flex-1 overflow-y-auto relative bg-white">
           <div className="relative z-10">
-          {cart.length === 0 ? <div className="flex items-center justify-center h-40 text-xs text-gray-400 italic">Belum ada item</div> : (
+          {cart.length === 0 ? <div className="flex items-center justify-center h-40 text-xs text-gray-400 italic">Belum ada transaksi</div> : (
             cart.map((item) => {
                const originalProduct = PRODUCTS.find(p => p.id === item.productId);
                const totalQtyItem = item.qty + (item.qtyPO || 0);
@@ -819,8 +827,8 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                     {/* 1. TRASH */}
                     <div className="col-span-1 flex justify-center pt-0.5"><button onClick={() => removeItem(item.id)}><Trash2 className="w-4 h-4 text-black cursor-pointer hover:text-red-600" /></button></div>
                     
-                    {/* 2. LOGIC QTY */}
-                    {transactionMode === 'KREDIT' ? (
+                    {/* 2. LOGIC KOLOM QTY */}
+                    {transactionMode === 'PO' ? (
                         <div className="col-span-3 grid grid-cols-2 gap-1">
                             {/* QTY FISIK */}
                             <div className="flex flex-col items-center justify-start gap-0.5">
@@ -851,11 +859,35 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                     <div className="col-span-2 flex justify-center pt-0.5">{originalProduct ? (<select className="w-full text-[10px] border border-gray-300 rounded px-0 py-0.5 focus:outline-none focus:border-blue-500 bg-white cursor-pointer" value={item.unit} onChange={(e) => handleCartUnitChange(item.id, item.productId, e.target.value)}>{originalProduct.availableUnits.map(u => (<option key={u.name} value={u.name}>{u.name}</option>))}</select>) : (<span className="text-[10px] font-medium">{item.unit}</span>)}</div>
                     
                     {/* 4. NAME & NOTE */}
-                    <div className="col-span-3 text-[11px] text-gray-700 leading-tight pr-1 break-words whitespace-normal pt-0.5">
+                    <div className="col-span-3 text-[11px] text-gray-700 leading-tight pr-1 wrap-break-word whitespace-normal pt-0.5">
                         <div className="font-medium truncate">{item.name}</div>
-                        {/* MENAMPILKAN VARIAN (UKURAN) */}
-                        <div className="text-xs text-gray-400 font-normal">{item.size}</div>
-                        {item.note && <div className="text-[10px] text-gray-500 italic">"{item.note}"</div>}
+                        {item.size && <div className="text-[10px] text-gray-500 font-light">{item.size}</div>}
+                        
+                        {editingNoteId === item.id ? (
+                            <div className="flex gap-1 mt-1 animate-in fade-in duration-200">
+                                <input 
+                                    type="text" 
+                                    value={editingNoteValue}
+                                    onChange={(e) => setEditingNoteValue(e.target.value)}
+                                    className="w-full border border-blue-400 rounded text-[10px] px-1 py-0.5 focus:outline-none"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') saveEditNote(item.id);
+                                        if (e.key === 'Escape') cancelEditNote();
+                                    }}
+                                />
+                                <button onClick={() => saveEditNote(item.id)} className="text-green-600 hover:bg-green-100 p-0.5 rounded"><Check className="w-3 h-3"/></button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-1 mt-0.5 group/note">
+                                {item.note ? (
+                                    <span className="text-[10px] text-gray-400 italic">"{item.note}"</span>
+                                ) : (
+                                    <span className="text-[10px] text-gray-300 italic opacity-0 group-hover/note:opacity-100">Ket...</span>
+                                )}
+                                <button onClick={() => startEditNote(item)} className="opacity-0 group-hover/note:opacity-100 transition-opacity text-gray-400 hover:text-blue-500 p-0.5"><Pencil className="w-3 h-3"/></button>
+                            </div>
+                        )}
                     </div>
 
                     {/* 5. PRICE & TOTAL */}
@@ -873,7 +905,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
           </div>
         </div>
 
-        {/* FOOTER */}
+        {/* FOOTER - VERSI KECIL */}
         <div className="bg-gray-100 border-t border-gray-300 z-10 shrink-0">
           <div className="flex justify-between items-center px-4 py-2 bg-gray-100">
              <span className="text-sm font-medium text-gray-600">Sub Total</span>
@@ -881,19 +913,19 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
            </div>
           
           <div className="grid grid-cols-2 grid-rows-2 h-20 text-white font-sans text-sm">
-            {transactionMode === 'KREDIT' ? (
+            {transactionMode === 'PO' ? (
                 <>
-                    <button onClick={handleCetakPO} className="col-span-2 bg-[#7DB9E9] hover:bg-blue-400 flex items-center justify-center border-b border-white font-bold">
+                    <button onClick={handleCetakBill} className="col-span-2 bg-[#7DB9E9] hover:bg-blue-400 flex items-center justify-center border-b border-white font-bold">
                         Simpan Draft
                     </button>
-                    <button onClick={handleOpenFakturKredit} className="col-span-2 bg-[#A5CEF2] hover:bg-blue-300 text-black flex items-center justify-center px-6">
+                    <button onClick={handleCetakFakturPO} className="col-span-2 bg-[#A5CEF2] hover:bg-blue-300 text-black flex items-center justify-center px-6">
                         <span className="font-bold text-lg">Cetak Faktur</span>
                     </button>
                 </>
             ) : (
                 <>
-                    <button onClick={handleCetakPO} className="col-span-2 bg-[#7DB9E9] hover:bg-blue-400 flex items-center justify-center border-b border-white font-bold">
-                        Cetak PO
+                    <button onClick={handleCetakBill} className="col-span-2 bg-[#7DB9E9] hover:bg-blue-400 flex items-center justify-center border-b border-white font-bold">
+                        Cetak Bill
                     </button>
                     <button onClick={handleOpenPayment} className="col-span-2 bg-[#A5CEF2] hover:bg-blue-300 text-black flex items-center justify-between px-6">
                         <span className="font-bold text-lg">Bayar</span>
@@ -905,40 +937,47 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         </div>
       </div>
 
-      {/* --- MODAL LIST SUPPLIER --- */}
-      {isSupplierModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+      {/* --- MODAL LIST CUSTOMER --- */}
+      {isCustomerModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
           <div className="bg-white rounded-3xl w-full max-w-[500px] p-6 shadow-2xl relative border border-gray-200">
-            <div className="text-center font-medium text-lg mb-4">List Supplier</div>
-            <div className="relative mb-6 flex gap-2"><div className="relative flex-1"><input type="text" value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Cari Supplier..." className="w-full pl-4 pr-4 py-2 border border-gray-500 rounded-full focus:outline-none focus:border-blue-500"/></div></div>
+            <div className="text-center font-medium text-lg mb-4">List Customer</div>
+            <div className="relative mb-6 flex gap-2"><div className="relative flex-1"><input type="text" value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="+62 895610402920" className="w-full pl-4 pr-4 py-2 border border-gray-500 rounded-full focus:outline-none focus:border-blue-500"/></div><button className="bg-[#3FA2F6] text-white px-6 rounded-full hover:bg-blue-600">Check</button></div>
             <div className="space-y-3 mb-8 max-h-60 overflow-y-auto">
-              {filteredSuppliers.length > 0 ? (filteredSuppliers.map(supp => (<div key={supp.id} className="flex items-center justify-between"><div className="flex gap-4 text-gray-800"><span className="font-medium w-24 truncate">{supp.name}</span><span className="text-gray-600 w-32 hidden sm:inline">{supp.phone}</span></div><button onClick={() => handleSelectSupplier(supp)} className="bg-[#5EEAD4] text-black font-medium px-6 py-1 rounded-full hover:bg-teal-300 shadow-sm">Pilih</button></div>))) : (<div className="text-center text-gray-500 py-4">Supplier tidak ditemukan</div>)}
+              {filteredCustomers.length > 0 ? (filteredCustomers.map(cust => (<div key={cust.id} className="flex items-center justify-between">
+                <div className="flex gap-4 text-gray-800">
+                  <span className="font-medium w-24 truncate">{cust.name}</span>
+                  <span className="text-gray-600 w-32 hidden sm:inline">{cust.phone}</span>
+                  <span className="text-gray-600">{cust.points} Poin</span>
+                </div>
+                <button onClick={() => handleSelectCustomer(cust)} className="bg-[#5EEAD4] text-black font-medium px-6 py-1 rounded-full hover:bg-teal-300 shadow-sm">Choose</button>
+              </div>))) : (<div className="text-center text-gray-500 py-4">Customer tidak ditemukan</div>)}
             </div>
-            <div className="flex justify-center"><button onClick={handleOpenNewSupplier} className="bg-[#3FA2F6] text-white px-8 py-2 rounded-xl text-lg hover:bg-blue-600 shadow-md flex items-center gap-2">+ Supplier baru</button></div>
-            <button onClick={() => setIsSupplierModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
+            <div className="flex justify-center"><button onClick={handleOpenNewCustomer} className="bg-[#3FA2F6] text-white px-8 py-2 rounded-xl text-lg hover:bg-blue-600 shadow-md flex items-center gap-2">+ Customer baru</button></div>
+            <button onClick={() => setIsCustomerModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
           </div>
         </div>
       )}
 
-      {/* --- MODAL NEW SUPPLIER --- */}
-      {isNewSupplierModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
+      {/* --- MODAL NEW CUSTOMER --- */}
+      {isNewCustomerModalOpen && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
           <div className="bg-white rounded-3xl w-full max-w-[550px] p-8 shadow-2xl relative border border-gray-200">
-            <div className="text-center font-medium text-lg mb-8">Supplier Baru</div>
+            <div className="text-center font-medium text-lg mb-8">New Customer</div>
             <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Nama Perusahaan*</label><input type="text" value={newSuppName} onChange={(e) => { setNewSuppName(e.target.value); setNewSuppNameError(false); }} className={`w-full border ${newSuppNameError ? 'border-red-500 bg-red-50' : 'border-gray-400'} rounded-xl px-3 py-2 focus:outline-none`}/>{newSuppNameError && <span className="text-red-500 text-xs mt-1">Nama wajib diisi</span>}</div><div><label className="block text-gray-700 mb-1">Telepon</label><input type="text" value={newSuppPhone} onChange={(e) => setNewSuppPhone(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Kontak Person</label><input type="text" value={newSuppContact} onChange={(e) => setNewSuppContact(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div><div><label className="block text-gray-700 mb-1">Email</label><input type="email" value={newSuppEmail} onChange={(e) => setNewSuppEmail(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
-              <div><label className="block text-gray-700 mb-1">Alamat</label><textarea value={newSuppAddress} onChange={(e) => setNewSuppAddress(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500" rows={2}/></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Nama*</label><input type="text" value={newCustName} onChange={(e) => { setNewCustName(e.target.value); setNewCustNameError(false); }} className={`w-full border ${newCustNameError ? 'border-red-500 bg-red-50' : 'border-gray-400'} rounded-xl px-3 py-2 focus:outline-none`}/>{newCustNameError && <span className="text-red-500 text-xs mt-1">Nama wajib diisi</span>}</div><div><label className="block text-gray-700 mb-1">Nomor HP</label><input type="text" value={newCustPhone} onChange={(e) => setNewCustPhone(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Email</label><input type="email" value={newCustEmail} onChange={(e) => setNewCustEmail(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div><div><label className="block text-gray-700 mb-1">Gender:</label><div className="flex border border-blue-300 rounded overflow-hidden w-40"><button onClick={() => setNewCustGender('L')} className={`flex-1 py-1 text-center ${newCustGender === 'L' ? 'bg-[#3FA2F6] text-white' : 'bg-white text-blue-400'}`}>L</button><button onClick={() => setNewCustGender('P')} className={`flex-1 py-1 text-center ${newCustGender === 'P' ? 'bg-[#3FA2F6] text-white' : 'bg-white text-blue-400 border-l border-blue-300'}`}>P</button></div></div></div>
+              <div><label className="block text-gray-700 mb-1">Tanggal lahir:</label><div className="relative w-full sm:w-1/2"><input type="date" value={newCustDob} onChange={(e) => setNewCustDob(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
             </div>
-            <div className="mt-10 flex justify-center"><button onClick={handleSubmitNewSupplier} className="bg-[#5EEAD4] text-black font-medium px-12 py-2 rounded-full hover:bg-teal-300 shadow-md text-lg">Simpan</button></div>
-             <button onClick={() => setIsNewSupplierModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
+            <div className="mt-10 flex justify-center"><button onClick={handleSubmitNewCustomer} className="bg-[#5EEAD4] text-black font-medium px-12 py-2 rounded-full hover:bg-teal-300 shadow-md text-lg">Submit</button></div>
+             <button onClick={() => setIsNewCustomerModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
           </div>
         </div>
       )}
 
       {/* MODAL POPUP DETAIL PRODUK */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm" onClick={closeProductModal}>
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm" onClick={closeProductModal}>
             <div className="bg-white rounded-2xl w-full max-w-[450px] p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200 border border-gray-200" onClick={(e) => e.stopPropagation()}>
                 <div className="flex flex-col items-center mb-6"><img src={selectedProduct.image} alt="Product" className="h-32 object-contain mb-3" /><h3 className="text-xl font-medium text-gray-800 text-center">{selectedProduct.name}</h3></div>
                 
@@ -975,38 +1014,40 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
       {/* Modal Edit Harga Numpad */}
       {editingPriceId !== null && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center"><div className="absolute inset-0 bg-black opacity-40" onClick={cancelEditPrice}></div><div className="relative bg-white rounded-lg shadow-lg w-80 p-4 z-10"><div className="flex justify-between items-center mb-3"><h3 className="text-lg font-semibold">Edit Harga Beli</h3><button onClick={cancelEditPrice} className="text-gray-600">Batal</button></div><div className="mb-3"><div className="text-sm text-gray-500">Harga sekarang</div><div className="text-2xl font-bold">{formatRupiah(Number(editingPriceValue || 0))}</div></div><div className="grid grid-cols-3 gap-2 mb-3">{["1","2","3","4","5","6","7","8","9"].map(d => (<button key={d} onClick={() => appendDigit(d)} className="bg-gray-100 py-3 rounded text-lg">{d}</button>))}<button onClick={backspaceDigit} className="bg-gray-100 py-3 rounded text-lg">⌫</button><button onClick={() => appendDigit("0")} className="bg-gray-100 py-3 rounded text-lg">0</button><button onClick={clearDigits} className="bg-gray-100 py-3 rounded text-lg">C</button></div><div className="flex gap-2"><button onClick={cancelEditPrice} className="flex-1 py-2 rounded bg-gray-200">Cancel</button><button onClick={confirmEditPrice} className="flex-1 py-2 rounded bg-green-600 text-white font-bold">OK</button></div></div></div>
+        <div className="fixed inset-0 z-70 flex items-center justify-center"><div className="absolute inset-0 bg-black opacity-40" onClick={cancelEditPrice}></div><div className="relative bg-white rounded-lg shadow-lg w-80 p-4 z-10"><div className="flex justify-between items-center mb-3"><h3 className="text-lg font-semibold">Edit Harga Satuan</h3><button onClick={cancelEditPrice} className="text-gray-600">Batal</button></div><div className="mb-3"><div className="text-sm text-gray-500">Harga sekarang</div><div className="text-2xl font-bold">{formatRupiah(Number(editingPriceValue || 0))}</div></div><div className="grid grid-cols-3 gap-2 mb-3">{["1","2","3","4","5","6","7","8","9"].map(d => (<button key={d} onClick={() => appendDigit(d)} className="bg-gray-100 py-3 rounded text-lg">{d}</button>))}<button onClick={backspaceDigit} className="bg-gray-100 py-3 rounded text-lg">⌫</button><button onClick={() => appendDigit("0")} className="bg-gray-100 py-3 rounded text-lg">0</button><button onClick={clearDigits} className="bg-gray-100 py-3 rounded text-lg">C</button></div><div className="flex gap-2"><button onClick={cancelEditPrice} className="flex-1 py-2 rounded bg-gray-200">Cancel</button><button onClick={confirmEditPrice} className="flex-1 py-2 rounded bg-green-600 text-white font-bold">OK</button></div></div></div>
       )}
 
       {/* --- HALAMAN PEMBAYARAN (FULL SCREEN MODAL) --- */}
+      {/* DIKEMBALIKAN KE VERSI ORIGINAL YANG BESAR & JELAS */}
       {isPaymentModalOpen && (
-        <div className="fixed inset-0 z-[80] bg-blue-50 flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-300">
+        <div className="fixed inset-0 z-80 bg-blue-50 flex flex-col animate-in slide-in-from-bottom-10 fade-in duration-300">
           <div className="h-14 bg-blue-50 flex items-center px-4 border-b border-gray-200">
             <button onClick={() => setIsPaymentModalOpen(false)} className="flex items-center gap-2 text-gray-700 hover:text-black">
               <ArrowLeft className="w-6 h-6" />
-              <span className="font-bold text-lg">Pembayaran Pembelian</span>
+              <span className="font-bold text-lg">Rincian Pembayaran</span>
             </button>
           </div>
           
           <div className="flex-1 flex flex-col lg:flex-row overflow-hidden overflow-y-auto">
-            {/* KOLOM KIRI */}
+            {/* KOLOM KIRI: RINCIAN BELANJA */}
             <div className="w-full lg:w-1/3 bg-white border-b lg:border-r border-gray-300 flex flex-col p-4 shrink-0">
               <div className="border border-black p-2 rounded-sm h-full flex flex-col max-h-[300px] lg:max-h-none overflow-y-auto lg:overflow-visible">
+                {/* HEADER MODAL PEMBAYARAN */}
                 <div className="relative border-b border-black pb-2 mb-2 h-14 shrink-0">
                     <div className="absolute left-0 top-0 bottom-0 flex flex-col justify-center items-center w-16">
-                        <div className="border border-black rounded-full p-0.5"><Building2 className="w-6 h-6" /></div>
-                        <span className="text-xs font-bold text-center leading-none mt-1 truncate w-full">{selectedSupplier?.name}</span>
+                        <div className="border border-black rounded-full p-0.5"><User className="w-6 h-6" /></div>
+                        <span className="text-xs font-bold text-center leading-none mt-1 truncate w-full">{selectedCustomer?.name}</span>
                     </div>
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <h2 className="text-xl font-bold uppercase">
-                            {transactionMode === 'KREDIT' ? 'PEMBELIAN PO' : 'PEMBELIAN'}
+                            {transactionMode === 'PO' ? 'PENJUALAN KREDIT' : 'PENJUALAN'}
                         </h2>
                     </div>
                     <div className="absolute right-0 bottom-0 text-xs font-bold">
                         {currentInvoiceNo}
                     </div>
                 </div>
-                <div className="grid grid-cols-12 text-base font-bold border-b border-gray-200 pb-1 mb-2"><div className="col-span-2 text-center">Qty</div><div className="col-span-2">Unit</div><div className="col-span-4">Name</div><div className="col-span-4 text-right">@Harga / Total</div></div>
+                <div className="grid grid-cols-12 text-base font-bold border-b border-gray-200 pb-1 mb-2"><div className="col-span-2 text-center">{transactionMode === 'PO' ? 'Qty' : 'Qty'}</div><div className="col-span-2">Unit</div><div className="col-span-4">Name</div><div className="col-span-4 text-right">@Harga / Total</div></div>
                 <div className="flex-1 overflow-y-auto min-h-[100px]">
                     {cart.map(item => (
                         <div key={item.id} className="grid grid-cols-12 text-base py-3 border-b border-gray-100 items-center">
@@ -1014,7 +1055,6 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                             <div className="col-span-2 text-sm">{item.unit}</div>
                             <div className="col-span-4 leading-tight font-medium text-sm">
                                 {item.name}
-                                {/* MENAMPILKAN VARIAN (UKURAN) */}
                                 <div className="text-xs text-gray-400 font-normal">{item.size}</div>
                                 {item.note && <div className="text-[10px] text-gray-500 italic">"{item.note}"</div>}
                             </div>
@@ -1029,60 +1069,33 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
               </div>
             </div>
 
-            {/* KOLOM TENGAH */}
+            {/* KOLOM TENGAH: INFO TAGIHAN (ORIGINAL STYLE) */}
             <div className="w-full lg:w-1/3 p-4 lg:p-6 flex flex-col justify-between border-b lg:border-r border-gray-300">
-               <div className="border border-gray-300 shadow-sm"><div className="bg-[#87C3FE] p-4 text-2xl font-bold text-black border-b border-gray-300">Pembayaran</div><div className="bg-white p-6 space-y-6 text-xl"><div className="flex justify-between"><span>Tagihan</span><span>{formatRupiah(subTotal)}</span></div><div className="flex justify-between"><span>Bayar</span>{selectedPaymentMethod === 'HUTANG' ? (<span className="text-red-500 font-bold">HUTANG</span>) : (<span>{formatRupiah(paymentAmount)}</span>)}</div>{selectedPaymentMethod !== 'HUTANG' && (<><div className="flex justify-between text-red-500 font-bold"><span>Sisa</span><span>{formatRupiah(sisaTagihan)}</span></div><div className="flex justify-between"><span>Kembalian</span><span>{formatRupiah(kembalian)}</span></div></>)}</div></div>
+               <div className="border border-gray-300 shadow-sm"><div className="bg-[#87C3FE] p-4 text-2xl font-bold text-black border-b border-gray-300">Pembayaran</div><div className="bg-white p-6 space-y-6 text-xl"><div className="flex justify-between"><span>Tagihan</span><span>{formatRupiah(subTotal)}</span></div><div className="flex justify-between"><span>Pembayaran</span>{selectedPaymentMethod === 'HUTANG' ? (<span className="text-red-500 font-bold">HUTANG</span>) : (<span>{formatRupiah(paymentAmount)}</span>)}</div>{selectedPaymentMethod !== 'HUTANG' && (<><div className="flex justify-between text-red-500 font-bold"><span>Sisa</span><span>{formatRupiah(sisaTagihan)}</span></div><div className="flex justify-between"><span>Kembalian</span><span>{formatRupiah(kembalian)}</span></div></>)}</div></div>
             </div>
 
-            {/* KOLOM KANAN */}
+            {/* KOLOM KANAN: METODE PEMBAYARAN (ORIGINAL STYLE) */}
             <div className="w-full lg:w-1/3 p-4 lg:p-6 flex flex-col gap-6 bg-white relative pb-32 lg:pb-6">
               <div className="space-y-4">
                  <div className="flex items-center gap-4"><span className="text-xl lg:text-2xl w-24">TUNAI</span><button onClick={() => handleQuickPayment('UANG_PAS')} className={`border border-black px-4 py-2 text-lg lg:text-xl w-40 ${selectedPaymentMethod === 'UANG_PAS' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}>UANG PAS</button></div>
                  <div className="flex items-center gap-4 pl-0 lg:pl-28"><button onClick={openPaymentNumpad} className={`border border-black px-4 py-2 text-xl flex items-center gap-2 w-40 ${selectedPaymentMethod === 'LAINNYA' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}>{selectedPaymentMethod === 'LAINNYA' && paymentAmount > 0 ? formatRupiah(paymentAmount) : <><Calculator className="w-5 h-5"/> Lainnya</>}</button></div>
-                 <div className="flex items-center gap-4 mt-8"><span className="text-xl lg:text-2xl w-24">Transfer</span><button onClick={() => handleQuickPayment('TRANSFER')} className={`border border-black px-4 py-2 text-lg ${selectedPaymentMethod === 'TRANSFER' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}>BANK TRANSFER</button></div>
-                 
-                 {/* TOMBOL HUTANG + INPUT JATUH TEMPO */}
-                 <div className="flex flex-col gap-2 mt-4 border-t border-gray-200 pt-4">
-                     <div className="flex items-center gap-4">
-                        <span className="text-xl lg:text-2xl w-24 font-bold text-red-600">HUTANG</span>
-                        <button 
-                            onClick={() => {
-                                setSelectedPaymentMethod('HUTANG');
-                                setPaymentAmount(0);
-                            }} 
-                            className={`border border-black px-4 py-2 text-lg w-40 font-bold ${selectedPaymentMethod === 'HUTANG' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}
-                        >
-                            TEMPO
-                        </button>
-                     </div>
-                     {selectedPaymentMethod === 'HUTANG' && (
-                         <div className="pl-0 lg:pl-28 mt-2 animate-in fade-in slide-in-from-top-2">
-                             <label className="block text-sm font-bold text-gray-700 mb-1">Tanggal Jatuh Tempo:</label>
-                             <input 
-                                type="date" 
-                                value={jatuhTempoDate}
-                                onChange={(e) => setJatuhTempoDate(e.target.value)}
-                                className="w-40 border border-gray-400 rounded px-2 py-1 font-bold text-gray-800 focus:outline-none focus:border-blue-500"
-                             />
-                         </div>
-                     )}
-                 </div>
+                 <div className="flex items-center gap-4 mt-8"><span className="text-xl lg:text-2xl w-24">Qris</span><button onClick={() => handleQuickPayment('QRIS')} className={`border border-black px-2 py-1 ${selectedPaymentMethod === 'QRIS' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}><QrCode className="w-10 h-8"/></button></div>
               </div>
 
               <div className="lg:absolute lg:bottom-6 lg:right-6 lg:left-6 mt-6 lg:mt-0"><button onClick={handleProcessPayment} disabled={selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0} className={`w-full py-4 text-2xl font-bold flex items-center justify-center gap-2 rounded-lg ${(selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#87C3FE] text-black hover:bg-blue-400 shadow-lg'}`}><ShoppingCart className="w-6 h-6"/> Proses Bayar</button></div>
 
               {isPaymentNumpadOpen && (
-                <div className="absolute inset-0 bg-white z-20 p-4 flex flex-col"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold">Input Nominal</h3><button onClick={() => setIsPaymentNumpadOpen(false)} className="text-red-500 font-bold">Batal</button></div><div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">{formatRupiah(parseInt(paymentNumpadValue))}</div><div className="grid grid-cols-3 gap-3 flex-1">{["1","2","3","4","5","6","7","8","9"].map(d => (<button key={d} onClick={() => appendPaymentDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">{d}</button>))}<button onClick={backspacePaymentDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button><button onClick={() => appendPaymentDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button><button onClick={confirmPaymentNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button></div></div>
+                <div className="absolute inset-0 bg-white z-20 p-4 flex flex-col"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold">Input Uang Tunai</h3><button onClick={() => setIsPaymentNumpadOpen(false)} className="text-red-500 font-bold">Batal</button></div><div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">{formatRupiah(parseInt(paymentNumpadValue))}</div><div className="grid grid-cols-3 gap-3 flex-1">{["1","2","3","4","5","6","7","8","9"].map(d => (<button key={d} onClick={() => appendPaymentDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">{d}</button>))}<button onClick={backspacePaymentDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button><button onClick={() => appendPaymentDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button><button onClick={confirmPaymentNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button></div></div>
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* --- MODAL SUKSES --- */}
+      {/* --- MODAL POP-UP SUKSES --- */}
       {isSuccessModalOpen && (
         <div 
-          className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200 p-4"
+          className="fixed inset-0 z-90 bg-black/50 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200 p-4"
           onClick={(e) => {
              if(e.target === e.currentTarget) handleFinishTransaction();
           }}
@@ -1095,29 +1108,31 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                
                <div className="w-full space-y-3 mb-8">
                  <div className="flex justify-between text-gray-700"><span>Total Tagihan</span><span>{formatRupiah(subTotal)}</span></div>
-                 <div className="flex justify-between text-gray-700"><span>Bayar</span>{selectedPaymentMethod === 'HUTANG' ? <span className="text-red-500 font-bold">HUTANG</span> : <span>{formatRupiah(paymentAmount)}</span>}</div>
-                 {selectedPaymentMethod === 'HUTANG' && <div className="flex justify-between text-red-600 font-bold"><span>Jatuh Tempo</span><span>{jatuhTempoDate}</span></div>}
+                 <div className="flex justify-between text-gray-700"><span>Tunai</span><span>{formatRupiah(paymentAmount)}</span></div>
                  <div className="flex justify-between text-black font-bold text-lg"><span>Kembalian</span><span>{formatRupiah(kembalian)}</span></div>
                </div>
 
-               <div className="grid grid-cols-1 gap-3 w-full">
-                 {/* HANYA TOMBOL SELESAI */}
-                 <button onClick={handleFinishTransaction} className="w-full bg-[#87C3FE] hover:bg-blue-400 text-black py-4 rounded-lg text-lg font-bold mt-2 shadow-md">SELESAI</button>
+               <div className="grid grid-cols-2 gap-3 w-full">
+                 <button onClick={() => alert("Fitur Email...")} className="flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-black py-2 rounded text-sm font-bold"><Mail className="w-4 h-4"/> EMAIL</button>
+                 <button onClick={() => alert("Mencetak...")} className="flex items-center justify-center gap-2 bg-gray-200 hover:bg-gray-300 text-black py-2 rounded text-sm font-bold"><Printer className="w-4 h-4"/> CETAK</button>
+                 <button onClick={handleFinishTransaction} className="col-span-2 bg-[#87C3FE] hover:bg-blue-400 text-black py-3 rounded text-sm font-bold mt-2">SELESAI {'>'}</button>
                </div>
            </div>
         </div>
       )}
 
-      {/* --- MODAL JATUH TEMPO (PO) --- */}
+      {/* --- MODAL INPUT TANGGAL JATUH TEMPO (PO) --- */}
       {isPOModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center animate-in fade-in zoom-in duration-200 p-4">
+        <div className="fixed inset-0 z-100 bg-black/50 backdrop-blur-sm flex items-center justify-center animate-in fade-in zoom-in duration-200 p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-[400px] p-6 border border-gray-200">
                 <div className="text-center mb-6">
                     <div className="mx-auto w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mb-3">
                         <Calendar className="w-6 h-6 text-yellow-600"/>
                     </div>
                     <h3 className="text-xl font-bold text-gray-800">Set Jatuh Tempo</h3>
+                    <p className="text-sm text-gray-500 mt-1">Masukkan tanggal batas pembayaran untuk faktur kredit ini.</p>
                 </div>
+
                 <div className="mb-6">
                     <label className="block text-sm font-bold text-gray-700 mb-2">Tanggal Jatuh Tempo</label>
                     <input 
@@ -1127,9 +1142,20 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                         className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 font-medium"
                     />
                 </div>
+
                 <div className="grid grid-cols-2 gap-3">
-                    <button onClick={() => setIsPOModalOpen(false)} className="py-3 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors">Batal</button>
-                    <button onClick={handleFinalizeCredit} className="py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors shadow-lg">Simpan</button>
+                    <button 
+                        onClick={() => setIsPOModalOpen(false)}
+                        className="py-3 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+                    >
+                        Batal
+                    </button>
+                    <button 
+                        onClick={handleFinalizePO}
+                        className="py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors shadow-lg"
+                    >
+                        Simpan & Cetak
+                    </button>
                 </div>
             </div>
         </div>
@@ -1138,4 +1164,4 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   );
 };
 
-export default PembelianPage;
+export default KasirPage;

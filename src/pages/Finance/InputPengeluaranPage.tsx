@@ -1,7 +1,9 @@
 // src/pages/InputPengeluaranPage.tsx
 
 import React, { useState } from 'react';
-import { Menu, Save, Plus, Calendar, User, Wallet, Tag, FileText, XCircle, Banknote, ArrowLeft } from 'lucide-react';
+import { Menu, Save, Plus, Calendar, User, Wallet, Tag, FileText, XCircle, Banknote, FileBarChart } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import ConfirmationDialog from '../../components/ConfirmationDialog';
 
 interface InputPengeluaranPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
@@ -12,6 +14,8 @@ const INITIAL_CATEGORIES = ['Listrik & Air', 'Gaji Karyawan', 'Transportasi', 'K
 const INITIAL_STAFF = ['Admin Vicky', 'Budi Gudang', 'Siti Kasir', 'Pak Eko Driver'];
 
 const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSidebarOpen }) => {
+  const navigate = useNavigate();
+  
   // --- STATE ---
   const today = new Date().toISOString().split('T')[0]; 
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES);
@@ -21,12 +25,35 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
       staffName: INITIAL_STAFF[0],
       category: '',
       description: '',
-      amount: ''
+      amount: '',
+      paymentMethod: '' // Default akan di-set ke cash
   });
+  
+  // Mock data payment methods from Cash Bank
+  // # woi back end jordy: GET /api/cash-bank/accounts untuk ambil daftar akun cash/bank
+  // Response: Array of { id: number, name: string, type: 'CASH' | 'BANK', balance: number }
+  const paymentMethods = [
+    { id: 1, name: "KAS TOKO", type: "CASH" as const },
+    { id: 2, name: "BANK BCA", type: "BANK" as const },
+  ];
+  
+  // Get default cash method
+  const defaultCashMethod = paymentMethods.find(m => m.type === 'CASH')?.id || paymentMethods[0]?.id || "";
+  
+  // Set default payment method to cash on mount
+  React.useEffect(() => {
+      if (!formData.paymentMethod) {
+          setFormData(prev => ({ ...prev, paymentMethod: String(defaultCashMethod) }));
+      }
+  }, []);
 
   // Modal Tambah Kategori
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
+  
+  // Dialog state untuk validasi
+  const [showValidationDialog, setShowValidationDialog] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
 
   // Helper Format Rupiah untuk Display Input
   const formatInputCurrency = (value: string) => {
@@ -51,6 +78,8 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
           alert("Kategori sudah ada!");
           return;
       }
+      // WOI BACKEND JORDY: INSERT kategori pengeluaran baru ke database
+      // POST /api/expense-categories dengan body: { name: newCategoryName }
       setCategories([...categories, newCategoryName]);
       setFormData(prev => ({ ...prev, category: newCategoryName })); 
       setIsAddCategoryOpen(false);
@@ -58,16 +87,40 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
   };
 
   const handleSubmit = () => {
-      if (!formData.category || !formData.amount || !formData.staffName) {
-          alert("Mohon lengkapi Kategori, Staff, dan Nominal.");
+      // Validasi wajib isi
+      const missingFields: string[] = [];
+      
+      if (!formData.category) {
+          missingFields.push("Kategori");
+      }
+      if (!formData.amount || Number(formData.amount) <= 0) {
+          missingFields.push("Nominal");
+      }
+      if (!formData.description || !formData.description.trim()) {
+          missingFields.push("Keterangan");
+      }
+      
+      if (missingFields.length > 0) {
+          setValidationMessage(`Mohon lengkapi field berikut:\n${missingFields.join(', ')}`);
+          setShowValidationDialog(true);
           return;
       }
-      // Simulasi Simpan
+      
+      // WOI BACKEND JORDY: INSERT data pengeluaran baru ke database
+      // POST /api/expenses dengan body: 
+      // { 
+      //   date: formData.date, 
+      //   staffName: formData.staffName, 
+      //   category: formData.category, 
+      //   description: formData.description, 
+      //   amount: Number(formData.amount),
+      //   paymentMethodId: formData.paymentMethod // ID dari cash bank account
+      // }
       console.log("Saving Expense:", formData);
       alert("Pengeluaran Berhasil Disimpan!");
       
-      // Reset Form
-      setFormData(prev => ({ ...prev, category: '', description: '', amount: '' }));
+      // Reset Form (keep payment method default)
+      setFormData(prev => ({ ...prev, category: '', description: '', amount: '', paymentMethod: String(defaultCashMethod) }));
   };
 
   return (
@@ -86,9 +139,9 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center">
-          <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden h-fit">
+          <div className="w-full max-w-3xl bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden h-fit relative">
               
-              <div className="bg-red-50 p-6 border-b border-red-100 flex items-center gap-4">
+              <div className="bg-red-50 p-6 border-b border-red-100 flex items-center gap-4 relative">
                   <div className="bg-red-100 p-3 rounded-full">
                       <Wallet className="w-8 h-8 text-red-600"/>
                   </div>
@@ -96,6 +149,14 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
                       <h2 className="text-xl font-bold text-red-900">Form Biaya Operasional</h2>
                       <p className="text-red-700 text-sm">Catat pengeluaran harian toko disini.</p>
                   </div>
+                  {/* Tombol bulat ke laporan pengeluaran */}
+                  <button
+                      onClick={() => navigate('/laporan-pengeluaran')}
+                      className="absolute top-4 right-4 bg-red-600 hover:bg-red-700 text-white rounded-full p-3 shadow-lg transition-all hover:scale-110 flex items-center justify-center"
+                      title="Lihat Laporan Pengeluaran"
+                  >
+                      <FileBarChart className="w-5 h-5"/>
+                  </button>
               </div>
 
               <div className="p-8 space-y-6">
@@ -114,7 +175,7 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
                       </div>
                       <div>
                           <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                              <User className="w-4 h-4 text-gray-500"/> Penanggung Jawab (Staff)
+                              <User className="w-4 h-4 text-gray-500"/> Pengeluaran Oleh (Staff)
                           </label>
                           <select 
                             value={formData.staffName}
@@ -167,18 +228,37 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
                       </div>
                   </div>
 
-                  {/* ROW 3: DESKRIPSI */}
-                  <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-gray-500"/> Keterangan / Catatan
-                      </label>
-                      <textarea 
-                        rows={3}
-                        value={formData.description}
-                        onChange={(e) => handleInputChange('description', e.target.value)}
-                        placeholder="Contoh: Beli token listrik untuk gudang..."
-                        className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:border-red-500 focus:outline-none text-sm resize-none"
-                      />
+                  {/* ROW 3: METODE PEMBAYARAN & DESKRIPSI */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                              <Wallet className="w-4 h-4 text-gray-500"/> Metode Pembayaran
+                          </label>
+                          <select 
+                            value={formData.paymentMethod}
+                            onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:border-red-500 focus:outline-none bg-white cursor-pointer"
+                          >
+                              <option value="">Pilih Metode</option>
+                              {paymentMethods.map(method => (
+                                  <option key={method.id} value={String(method.id)}>
+                                      {method.name} ({method.type})
+                                  </option>
+                              ))}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-gray-500"/> Keterangan / Catatan
+                          </label>
+                          <textarea 
+                            rows={3}
+                            value={formData.description}
+                            onChange={(e) => handleInputChange('description', e.target.value)}
+                            placeholder="Contoh: Beli token listrik untuk gudang..."
+                            className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:border-red-500 focus:outline-none text-sm resize-none"
+                          />
+                      </div>
                   </div>
 
                   {/* BUTTON ACTION */}
@@ -224,6 +304,24 @@ const InputPengeluaranPage: React.FC<InputPengeluaranPageProps> = ({ setIsSideba
               </div>
           </div>
       )}
+      
+      {/* Validation Dialog */}
+      <ConfirmationDialog
+        isOpen={showValidationDialog}
+        onConfirm={() => {
+          setShowValidationDialog(false);
+          setValidationMessage("");
+        }}
+        onCancel={() => {
+          setShowValidationDialog(false);
+          setValidationMessage("");
+        }}
+        title="Validasi Gagal"
+        message={validationMessage}
+        confirmText="OK"
+        cancelText="Batal"
+        type="danger"
+      />
 
     </div>
   );

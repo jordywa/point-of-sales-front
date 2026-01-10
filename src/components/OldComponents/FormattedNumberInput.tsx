@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getFormattedNumber } from '../utils/formatting';
+import { getFormattedNumber } from '../../utils/formatting';
 
 interface FormattedNumberInputProps {
   value: number;

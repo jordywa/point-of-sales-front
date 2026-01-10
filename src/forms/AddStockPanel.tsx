@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from 'react';
 import authenticatedAxios from '../utils/api';
 
-import FormattedNumberInput from '../components/FormattedNumberInput';
-import ExpiredDateInput from '../components/ExpiredDateInput';
+import FormattedNumberInput from '../components/OldComponents/FormattedNumberInput';
+import ExpiredDateInput from '../components/OldComponents/ExpiredDateInput';
 import { type DocumentData } from 'firebase/firestore';
 import { Trash, X } from 'lucide-react';
 import { type StockDetail } from '../interfaces/stock';

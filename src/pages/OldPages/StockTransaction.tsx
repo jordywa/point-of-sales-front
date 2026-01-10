@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy, type DocumentData } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { getFormattedDate, getFormattedCurrency, getFormattedNumber } from '../../utils/formatting';
-import EditStockTransactionModal from '../../components/EditStockTransactionModal';
+import EditStockTransactionModal from '../../components/OldComponents/EditStockTransactionModal';
 import { type StockTransaction as IStockTransaction } from '../../interfaces/stock';
 
 const StockTransaction: React.FC = () => {

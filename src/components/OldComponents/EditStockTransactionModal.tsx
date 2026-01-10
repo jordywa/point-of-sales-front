@@ -3,9 +3,9 @@ import { type DocumentData } from 'firebase/firestore';
 import { X } from 'lucide-react';
 import FormattedNumberInput from './FormattedNumberInput';
 import ExpiredDateInput from './ExpiredDateInput';
-import authenticatedAxios from '../utils/api';
-import { getFormattedNumber } from '../utils/formatting';
-import { type StockTransaction as IStockTransaction } from '../interfaces/stock';
+import authenticatedAxios from '../../utils/api';
+import { getFormattedNumber } from '../../utils/formatting';
+import { type StockTransaction as IStockTransaction } from '../../interfaces/stock';
 
 interface EditStockTransactionModalProps {
   transaction: IStockTransaction;

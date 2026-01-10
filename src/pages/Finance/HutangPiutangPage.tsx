@@ -1,9 +1,9 @@
-// src/pages/FinancePage.tsx
+// src/pages/HutangPiutangPage.tsx
 
 import React, { useState, useMemo } from 'react';
-import { Menu, Search, Wallet, ArrowRight, Calendar, CheckCircle, XCircle, Banknote, History, CreditCard, ArrowLeft, Filter, AlertTriangle, ChevronDown, Package, LayoutGrid, List } from 'lucide-react';
+import { Menu, Search, Wallet, ArrowRight, Calendar, CheckCircle, XCircle, Banknote, History, CreditCard, ArrowLeft, AlertTriangle, ChevronDown, Package, LayoutGrid, List } from 'lucide-react';
 
-interface FinancePageProps {
+interface HutangPiutangPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
 }
 
@@ -140,7 +140,7 @@ const generateMockTransactions = (): DebtTransaction[] => {
 
 const INITIAL_TRANSACTIONS = generateMockTransactions();
 
-const FinancePage: React.FC<FinancePageProps> = ({ setIsSidebarOpen }) => {
+const HutangPiutangPage: React.FC<HutangPiutangPageProps> = ({ setIsSidebarOpen }) => {
   const [activeTab, setActiveTab] = useState<'PIUTANG' | 'HUTANG'>('PIUTANG'); 
   const [transactions, setTransactions] = useState<DebtTransaction[]>(INITIAL_TRANSACTIONS);
   const [searchQuery, setSearchQuery] = useState("");
@@ -734,4 +734,4 @@ const FinancePage: React.FC<FinancePageProps> = ({ setIsSidebarOpen }) => {
   );
 };
 
-export default FinancePage;
+export default HutangPiutangPage;

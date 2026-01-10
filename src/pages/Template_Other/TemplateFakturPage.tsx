@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Menu, Save, Eye, EyeOff, GripVertical, CheckSquare, Square, FileText, Settings, AlignVerticalJustifyCenter, Upload, X as XIcon, ChevronDown, Plus, Trash2, CheckCircle, XCircle, Edit3, Sliders, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
-import LocoImage from '../assets/loco.jpeg';
+import LocoImage from '../../assets/loco.jpeg';
 
 interface TemplateFakturPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
