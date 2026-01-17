@@ -37,7 +37,7 @@ const InventoryListViewTab: React.FC<InventoryListViewTabProps> = ({
           Unit <Store className="w-4 h-4" />
         </div>
         <div className="col-span-2">Variasi</div>
-        <div className="col-span-4 text-center">Stok (Converted)</div>
+        <div className="col-span-4 text-center">Stok</div>
       </div>
 
       {/* ISI TABEL */}
@@ -118,14 +118,20 @@ const InventoryListViewTab: React.FC<InventoryListViewTabProps> = ({
                   
                   {item.status === 'ACTIVE' ? (
                     <button
-                      onClick={() => handleToggleStatus(item.id, 'ACTIVE')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleStatus(item.id, item.status)
+                      }}
                       className="bg-[#E95318] text-white px-3 py-1.5 rounded flex items-center gap-1 hover:bg-orange-600 transition-colors text-xs font-bold shadow-sm"
                     >
                       <EyeOff className="w-3 h-3" /> Non-Aktifkan
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleToggleStatus(item.id, 'NON_ACTIVE')}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleToggleStatus(item.id, item.status)
+                      }}
                       className="bg-green-600 text-white px-3 py-1.5 rounded flex items-center gap-1 hover:bg-green-700 transition-colors text-xs font-bold shadow-sm"
                     >
                       <Check className="w-3 h-3" /> Aktifkan

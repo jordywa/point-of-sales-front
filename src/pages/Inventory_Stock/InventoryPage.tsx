@@ -1,15 +1,17 @@
 // src/pages/InventoryPage.tsx
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, Menu, Plus, Upload, ChevronDown, LayoutGrid, List, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { InventoryItem, InventoryVariant } from '../../types/index';
+import type { InventoryItem, InventoryVariant, UnitConversion } from '../../types/index';
 // Import 5 Komponen yang sudah dipisah
 import InventoryListViewTab from './InventoryListViewTab';
 import InventoryGridViewTab from './InventoryGridViewTab';
 import InventoryDetailProdukTab from './InventoryDetailProdukTab';
 import InventoryTambahProduk from './InventoryTambahProduk';
 import InventoryUploadProduk from './InventoryUploadProduk';
-import { collection, limit, onSnapshot, orderBy, query, QueryDocumentSnapshot, startAfter, type DocumentData } from 'firebase/firestore';
+import { collection, getCountFromServer, limit, onSnapshot, orderBy, query, QueryDocumentSnapshot, startAfter, where, type DocumentData } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
+import authenticatedAxios from '../../utils/api';
+import { API_BASE_URL } from '../../apiConfig';
 
 interface InventoryPageProps {
   setIsSidebarOpen: (isOpen: boolean) => void;
@@ -41,51 +43,68 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
   const [modalStockUnits, setModalStockUnits] = useState<Record<number, string>>({}); 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
 
   // --- STATE UNTUK TAMBAH PRODUK ---
   const [newProductImages, setNewProductImages] = useState<(File | null)[]>([null, null, null]);
   const [newProductName, setNewProductName] = useState("");
-  const [newProductVariants, setNewProductVariants] = useState([{ name: "" }]);
-  const [unitConversions, setUnitConversions] = useState([{ from: "", to: "", value: 0 }]);
+  const [newProductVariants, setNewProductVariants] = useState([{ name: "default" }]);
+
+  const defaultUnitConversionData = [{ name:"Pcs", purchasePrice: 0, qtyConversion: 1, salesPrice: 0}]
+  
+  const [unitConversions, setUnitConversions] = useState<UnitConversion[]>(defaultUnitConversionData);
   const [newProductPrices, setNewProductPrices] = useState<Record<string, { modal: number, jual: number }>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [pageCursors, setPageCursors] = useState<{[key: number]: QueryDocumentSnapshot<DocumentData> | null}>({
     1: null // Halaman 1 tidak punya cursor startAfter
   });
+
+  const setDefaultProductData = () =>{
+    setNewProductPrices({})
+    setUnitConversions(defaultUnitConversionData)
+    setNewProductVariants([{name: "default"}])
+    setNewProductName("")
+    setNewProductImages([null, null, null])
+
+  }
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- FETCH DATA SIMULATION ---
   useEffect(() => {
-    if (!userDb) {
-      console.error("Tidak ada dbnya: ", userDb);
-      return;
-    }
-    // 1. Tentukan query dasar
-    let q = query(
-      collection(userDb, productCollection),
-      orderBy("name"), // Urutan harus konsisten agar pagination stabil
-      limit(itemsPerPage)
-    );
+    if (!userDb) return;
 
-    // 2. Jika bukan halaman 1, gunakan cursor dari halaman sebelumnya
-    if (currentPage > 1) {
-      const prevPage = currentPage - 1;
-      const cursor = pageCursors[prevPage];
+    setIsLoadingData(true);
 
-      if (cursor) {
-        q = query(
-          collection(userDb, productCollection),
-          orderBy("name"),
-          startAfter(cursor), // Gunakan cursor dari halaman sebelumnya
-          limit(itemsPerPage)
-        );
-      }
+    // 1. Array untuk menampung kondisi query
+    let queryConstraints: any[] = [orderBy("name")];
+
+    // 2. Logika FILTER Status (Active / Non-Active)
+    // Catatan: Untuk 'HABIS', biasanya butuh field 'totalQty' di dokumen Firestore 
+    // karena Firestore tidak bisa query hasil kalkulasi array variants secara langsung.
+    if (inventoryFilter === 'ACTIVE' || inventoryFilter === 'NON_ACTIVE') {
+      queryConstraints.push(where("status", "==", inventoryFilter));
     }
 
-    // 3. Pasang onSnapshot
+    // 3. Logika SEARCH (Prefix Search)
+    if (inventorySearch.trim() !== "") {
+      // Mencari yang diawali dengan teks search
+      queryConstraints.push(where("name", ">=", inventorySearch));
+      queryConstraints.push(where("name", "<=", inventorySearch + "\uf8ff"));
+    }
+
+    // 4. Logika PAGINATION
+    queryConstraints.push(limit(itemsPerPage));
+    
+    if (currentPage > 1 && pageCursors[currentPage - 1]) {
+      queryConstraints.push(startAfter(pageCursors[currentPage - 1]));
+    }
+
+    // 5. Eksekusi Query
+    const q = query(collection(userDb, productCollection), ...queryConstraints);
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setIsLoadingData(true)
       const items = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -93,23 +112,55 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
 
       setInventoryItems(items);
 
-      // 4. Simpan cursor untuk halaman BERIKUTNYA
-      // Dokumen terakhir di snapshot ini akan menjadi titik mulai (startAfter) untuk halaman selanjutnya
       if (snapshot.docs.length > 0) {
         const lastDoc = snapshot.docs[snapshot.docs.length - 1];
         setPageCursors(prev => ({
           ...prev,
-          [currentPage + 1]: lastDoc
+          [currentPage]: lastDoc
         }));
       }
-      setIsLoadingData(false)
+      setIsLoadingData(false);
     }, (error) => {
       console.error("Error fetching inventory: ", error);
+      setIsLoadingData(false);
     });
 
-    // 5. Cleanup: Matikan listener saat halaman pindah atau component unmount
     return () => unsubscribe();
-  }, [userDb]);
+    
+    // Tambahkan semua pemicu di dependency array
+  }, [userDb, currentPage, itemsPerPage, inventorySearch, inventoryFilter]);
+
+  useEffect(() => {
+    const fetchTotalCount = async () => {
+      if (!userDb) return;
+
+      // 1. Buat query yang SAMA dengan query filter/search kamu
+      let qConstraints: any[] = [];
+      
+      if (inventoryFilter === 'ACTIVE' || inventoryFilter === 'NON_ACTIVE') {
+        qConstraints.push(where("status", "==", inventoryFilter));
+      }
+
+      if (inventorySearch.trim() !== "") {
+        qConstraints.push(where("name", ">=", inventorySearch));
+        qConstraints.push(where("name", "<=", inventorySearch + "\uf8ff"));
+      }
+
+      const q = query(collection(userDb, productCollection), ...qConstraints);
+      
+      // 2. Ambil jumlah total dari server
+      const snapshot = await getCountFromServer(q);
+      setTotalItems(snapshot.data().count);
+    };
+
+    fetchTotalCount();
+  }, [userDb, inventorySearch, inventoryFilter]);
+
+  // Tambahkan useEffect ini di atas useEffect fetch data
+  useEffect(() => {
+    setCurrentPage(1);
+    setPageCursors({ 1: null }); // Reset cursor juga
+  }, [inventorySearch, inventoryFilter]);
 
   // --- LOGIC HELPERS ---
   const formatRupiah = (num: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0);
@@ -214,25 +265,97 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
       setInventoryItems(prev => prev.filter(item => item.id !== id));
     }
   };
-  const handleToggleStatus = (id: string, currentStatus: string) => {
+  const handleToggleStatus = async (id: string, currentStatus: string) => {
       const newStatus = currentStatus === 'ACTIVE' ? 'NON_ACTIVE' : 'ACTIVE';
       // WOI BACKEND JORDY: UPDATE status produk di database
       // PUT /api/inventory/{id}/status dengan body: { status: newStatus }
       // Setelah berhasil, update state atau refresh data
-      setInventoryItems(prev => prev.map(item => item.id === id ? { ...item, status: newStatus as any } : item));
+      // setInventoryItems(prev => prev.map(item => item.id === id ? { ...item, status: newStatus as any } : item));
+      try {
+          setIsUploading(true)
+          const response = await authenticatedAxios.put(`${API_BASE_URL}/api/products/update`, {
+              id: id,
+              status: newStatus
+          });
+          // Accept both 200 and 201 as success
+          if (response.status === 200 || response.status === 201) {
+              setIsAddProductPage(false); 
+              setDefaultProductData();
+              alert("Product Berhasil Diupdate Statusnya!");
+          } else {
+              console.error("Unexpected status code:", response.status);
+              alert(`Gagal mengupdate status. Status: ${response.status}`);
+          }
+      } catch (error: any) {
+          console.error("Error Mengupdate Status:", error);
+          console.error("Error response:", error?.response);
+          const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Gagal mengupdate status. Silakan coba lagi.";
+          alert(errorMsg);
+      } finally{
+        setIsUploading(false); 
+      }
   };
 
   // --- FILTERING & PAGINATION LOGIC ---
   const filteredItems = useMemo(() => {
-    return inventoryItems.filter(item => {
-      let statusMatch = inventoryFilter === 'ACTIVE' ? item.status === 'ACTIVE' : inventoryFilter === 'NON_ACTIVE' ? item.status === 'NON_ACTIVE' : item.variants.reduce((acc, curr) => acc + getTotalPcs(curr), 0) === 0 && item.status === 'ACTIVE';
-      return statusMatch && item.name.toLowerCase().includes(inventorySearch.toLowerCase());
-    });
-  }, [inventoryItems, inventoryFilter, inventorySearch]);
+  // Langsung gunakan data dari state karena sudah di-filter oleh Firestore
+    return inventoryItems;
+  }, [inventoryItems]);
 
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const currentItems = filteredItems.slice(indexOfLastItem - itemsPerPage, indexOfLastItem);
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endIndex = Math.min(currentPage * itemsPerPage, totalItems);
 
+  const currentItems = filteredItems;
+
+  const handleSaveNewProduct = async () =>{
+    if (!newProductName) return alert("Nama Akun Wajib Diisi!");
+      const mappedProductVariants: InventoryVariant[] = []
+      newProductVariants.forEach((val) => {
+        mappedProductVariants.push({name: val.name, unitConversions: [], currSeq: [], qty: 0})
+      });
+      Object.entries(newProductPrices).forEach(([key, value]) => {
+          const keySplit = key.split("-")
+          const varKey = Number(keySplit[0])
+          const unitKey = keySplit[1]
+          const conv = unitConversions.find((conv) => conv.name === unitKey)
+          if(conv){
+            conv.purchasePrice = value.modal
+            conv.salesPrice = value.jual
+            mappedProductVariants[varKey].unitConversions.push(conv)
+          }
+      });
+      
+      const newProduct: InventoryItem = {
+          id: "",
+          name: newProductName,
+          image: [],
+          status: "ACTIVE",
+          variants: mappedProductVariants
+      };
+      try {
+          setIsUploading(true)
+          const response = await authenticatedAxios.post(`${API_BASE_URL}/api/products`, {
+              ...newProduct
+          });
+          console.log("Insert bank response:", response);
+          // Accept both 200 and 201 as success
+          if (response.status === 200 || response.status === 201) {
+              setIsAddProductPage(false); 
+              setDefaultProductData();
+              alert("Product Berhasil Ditambahkan!");
+          } else {
+              console.error("Unexpected status code:", response.status);
+              alert(`Gagal menambahkan produk. Status: ${response.status}`);
+          }
+      } catch (error: any) {
+          console.error("Error menambahkan produk:", error);
+          console.error("Error response:", error?.response);
+          const errorMsg = error?.response?.data?.message || error?.response?.data?.error || error?.message || "Gagal menambahkan produk. Silakan coba lagi.";
+          alert(errorMsg);
+      } finally{
+        setIsUploading(false); 
+      }
+  }
   // --- RENDER LOGIC ---
 
   // 1. Jika Mode Upload Aktif
@@ -319,22 +442,28 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
 
       {/* FOOTER PAGINATION */}
       <div className="bg-white border-t p-4 flex justify-between items-center sticky bottom-0 z-20 shadow-2xl">
-          <div className="text-gray-800 font-medium">Menampilkan <span className="font-bold">{indexOfLastItem - itemsPerPage + 1} - {Math.min(indexOfLastItem, filteredItems.length)}</span> dari {filteredItems.length} Produk</div>
+          <div className="text-gray-800 font-medium">Menampilkan <span className="font-bold">{startIndex} - {endIndex}</span> dari {totalItems} Produk (Halaman {currentPage})</div>
+          
           <div className="flex items-center gap-4">
               <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} className="px-4 py-2 rounded bg-gray-100 disabled:opacity-50 flex items-center gap-1"><ChevronLeft className="w-4 h-4"/> Balik</button>
-              <button onClick={() => setCurrentPage(prev => prev + 1)} disabled={indexOfLastItem >= filteredItems.length} className="px-4 py-2 rounded bg-[#BEDFFF] text-blue-900 disabled:opacity-50 flex items-center gap-1">Lanjut <ChevronRight className="w-4 h-4"/></button>
+              <button onClick={() => setCurrentPage(prev => prev + 1)} disabled={inventoryItems.length < itemsPerPage} className="px-4 py-2 rounded bg-[#BEDFFF] text-blue-900 disabled:opacity-50 flex items-center gap-1">Lanjut <ChevronRight className="w-4 h-4"/></button>
           </div>
       </div>
 
       {/* MODAL OVERLAYS */}
       {isAddProductPage && (
         <InventoryTambahProduk 
+            setDefaultProductData={setDefaultProductData}
             setIsAddProductPage={setIsAddProductPage} isUploading={isUploading} newProductImages={newProductImages}
             handleImageUpload={(idx, file) => { const imgs = [...newProductImages]; imgs[idx] = file; setNewProductImages(imgs); }}
             newProductName={newProductName} setNewProductName={setNewProductName} unitConversions={unitConversions}
-            updateConversion={(idx, field, val) => { const nc = [...unitConversions]; (nc as any)[idx][field] = val; setUnitConversions(nc); }}
+            updateConversion={(idx, field, val) => { 
+              const nc = [...unitConversions]; 
+              (nc as any)[idx][field] = val; 
+              setUnitConversions(nc); 
+            }}
             handleRemoveConversion={(idx) => setUnitConversions(unitConversions.filter((_, i) => i !== idx))}
-            handleAddConversion={() => setUnitConversions([...unitConversions, { from: unitConversions[unitConversions.length-1]?.to || "", to: "", value: 0 }])}
+            handleAddConversion={() => setUnitConversions([...unitConversions, {name: "", purchasePrice: 0, qtyConversion: 0, salesPrice: 0, sourceConversion: "Pcs"}])}
             newProductVariants={newProductVariants} updateVariant={(idx, val) => { const nv = [...newProductVariants]; nv[idx].name = val; setNewProductVariants(nv); }}
             handleRemoveVariant={(idx) => setNewProductVariants(newProductVariants.filter((_, i) => i !== idx))}
             handleAddVariant={() => setNewProductVariants([...newProductVariants, { name: "" }])}
@@ -351,12 +480,7 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
               // }
               // Response: { success: boolean, data: InventoryItem, message: string }
               // Setelah berhasil, refresh data inventory atau tambahkan ke state
-              setIsUploading(true); 
-              setTimeout(() => { 
-                setIsUploading(false); 
-                setIsAddProductPage(false); 
-                alert("Tersimpan!"); 
-              }, 1000); 
+              handleSaveNewProduct()
             }}
         />
       )}

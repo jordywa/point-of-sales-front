@@ -49,7 +49,7 @@ const InventoryGridViewTab: React.FC<InventoryGridViewTabProps> = ({
               {/* Gambar dengan aspek rasio yang konsisten */}
               <div className="w-20 h-20 md:w-24 md:h-24 flex-shrink-0">
                 <img
-                  src={item.image}
+                  src={item.image[0]}
                   alt={item.name}
                   className="w-full h-full object-contain bg-black rounded-lg"
                 />
@@ -116,37 +116,37 @@ const InventoryGridViewTab: React.FC<InventoryGridViewTabProps> = ({
             {/* WOI BACKEND JORDY: handleDeleteInventory memanggil DELETE /api/inventory/{id} */}
             {/* WOI BACKEND JORDY: handleToggleStatus memanggil PUT /api/inventory/{id}/status */}
             <div className="flex flex-col text-white font-bold text-xs md:text-sm">
-              <div className="grid grid-cols-2">
-                <button
+              <div className="flex">
+                {/* <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteInventory(item.id); }}
-                  className="bg-red-600 hover:bg-red-700 py-2.5 flex items-center justify-center gap-1 transition-colors border-r border-red-700"
+                  className="bg-red-600 hover:bg-red-700 py-2.5 flex items-center justify-center gap-1 transition-colors border-r border-red-700 w-full"
                 >
                   <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" /> Hapus
-                </button>
+                </button> */}
 
                 {item.status === 'ACTIVE' ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleToggleStatus(item.id, 'ACTIVE'); }}
-                    className="bg-[#E95318] hover:bg-orange-600 py-2.5 flex items-center justify-center gap-1 transition-colors"
+                    className="bg-[#E95318] hover:bg-orange-600 py-2.5 flex items-center justify-center gap-1 transition-colors w-full"
                   >
                     <EyeOff className="w-3.5 h-3.5 md:w-4 md:h-4" /> Non-Aktif
                   </button>
                 ) : (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleToggleStatus(item.id, 'NON_ACTIVE'); }}
-                    className="bg-green-600 hover:bg-green-700 py-2.5 flex items-center justify-center gap-1 transition-colors"
+                    className="bg-green-600 hover:bg-green-700 py-2.5 flex items-center justify-center gap-1 transition-colors w-full"
                   >
                     <Check className="w-3.5 h-3.5 md:w-4 md:h-4" /> Aktifkan
                   </button>
                 )}
               </div>
 
-              <button
+              {/* <button
                 className="bg-[#3FA2F6] hover:bg-blue-600 py-3 flex items-center justify-center gap-1 transition-colors w-full"
                 onClick={() => setSelectedInventoryItem(item)}
               >
                 Lihat Detail Stok
-              </button>
+              </button> */}
             </div>
           </div>
         );

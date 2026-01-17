@@ -119,6 +119,7 @@ export interface InventoryVariant {
   unitConversions: UnitConversion[];
   qty: number;
   currSeq: ProductDetailSequence[];
+  outSeq?: ProductDetailSequence[];
 }
 
 export interface ProductDetailSequence{
@@ -144,8 +145,33 @@ export interface UnitConversion{
 export interface InventoryItem {
   id: string; // Changed from number
   name: string;
-  image: string;
+  image: string[];
   status: 'ACTIVE' | 'NON_ACTIVE';
   variants: InventoryVariant[];
   createdAt?: any; // Helper untuk sorting
+}
+
+export interface ProductPurchaseDetail{
+  productId: string;
+  productName: string;
+  variantNum: number;
+  variantName: string;
+  unitNum: number;
+  unitName: string;
+  purchasePrice: number;
+  qty: number;
+}
+
+export interface PurchaseTransaction{
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  productDetail: ProductPurchaseDetail[];
+  isHutang: boolean;
+  deadlineDate?: Date;
+  dp: number;
+  paymentMethod: 'TUNAI' | 'Transfer';
+  paymentValue: number;
+  remainingPayment: number;
+
 }

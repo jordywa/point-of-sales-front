@@ -1,9 +1,14 @@
 // src/pages/PembelianPage.tsx
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, ScanLine, Menu, History, User, Trash2, Edit2, X, ShoppingCart, Calculator, QrCode, ArrowLeft, Check, LayoutGrid, List, ChevronDown, Plus, Truck, Calendar, Mail, Printer, Pencil, LogOut, Key, ChevronUp, Package, Building2 } from 'lucide-react';
-import type { Product, CartItem, DraftTransaction, Supplier } from '../../types/index';
-import { PRODUCTS, INITIAL_SUPPLIERS } from '../../data/mockData';
+import { Search, ScanLine, Menu, History, Trash2, Edit2, X, ShoppingCart, Calculator, ArrowLeft, Check, LayoutGrid, List, ChevronDown, Plus, Calendar, LogOut, Key, ChevronLeft, ChevronRight, Loader2, Building2 } from 'lucide-react';
+import type { InventoryItem, InventoryVariant, CartItem, DraftTransaction, Supplier, PurchaseTransaction, ProductPurchaseDetail, NumberingConfig } from '../../types/index';
+import SupplierSelector from './SupplierSelector';
+import { collection, getCountFromServer, limit, onSnapshot, orderBy, query, QueryDocumentSnapshot, startAfter, where, doc, type DocumentData } from 'firebase/firestore';
+import { useAuth } from '../../context/AuthContext';
+import authenticatedAxios from '../../utils/api';
+import { API_BASE_URL } from '../../apiConfig';
+import { db } from '../../firebaseConfig';
 
 // Interface Draft khusus Pembelian (menggunakan Supplier)
 interface DraftPurchase extends Omit<DraftTransaction, 'customer'> {
@@ -25,7 +30,6 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
   // --- STATE MODE TRANSAKSI (PEMBELIAN / PEMBELIAN PO) ---
   const [transactionMode, setTransactionMode] = useState<'TUNAI' | 'KREDIT'>('TUNAI');
-  const [isTransactionMenuOpen, setIsTransactionMenuOpen] = useState(false);
 
   // --- UI VIEW MODE ---
   const [viewMode, setViewMode] = useState<'GRID' | 'LIST'>('LIST');
@@ -42,12 +46,14 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
   // --- STANDARD POS STATES ---
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<InventoryItem | null>(null);
+  const [listProducts, setListProducts] = useState<InventoryItem[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   
   // State Form di dalam Popup Produk (GRID VIEW)
   const [modalQty, setModalQty] = useState(1);
   const [modalUnit, setModalUnit] = useState("");
-  const [modalSize, setModalSize] = useState("");
+  const [modalVariant, setModalVariant] = useState<InventoryVariant | null>(null);
   const [modalNote, setModalNote] = useState("");
 
   // State Pilihan di LIST VIEW
@@ -70,58 +76,21 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   const [draftTransactions, setDraftTransactions] = useState<DraftPurchase[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // --- LOGIC NO NOTA OTOMATIS (FIXED & RECYCLED) ---
-  const [transactionCount, setTransactionCount] = useState(1);
+  // --- LOGIC INVOICE NUMBER (MENGgunakan generatePurchaseId) ---
   const [currentInvoiceNo, setCurrentInvoiceNo] = useState("");
-  const [recycledInvoiceNumbers, setRecycledInvoiceNumbers] = useState<string[]>([]); // Menyimpan nomor nota yang dihapus
-
-  // Helper untuk generate nomor nota PO
-  const generateInvoiceNumber = (count: number) => {
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    // Format: POYYYYMM/xxxxxx
-    return `PO${year}${month}/${String(count).padStart(6, '0')}`;
-  };
-
-  // Update Invoice No saat component mount, transactionCount berubah, atau ada nomor recycle
-  useEffect(() => {
-     if (activeDraftId === null) {
-        if (recycledInvoiceNumbers.length > 0) {
-            // Prioritaskan nomor nota yang dihapus (recycle)
-            setCurrentInvoiceNo(recycledInvoiceNumbers[0]);
-        } else {
-            // Jika tidak ada recycle, gunakan sequence baru
-            setCurrentInvoiceNo(generateInvoiceNumber(transactionCount));
-        }
-     }
-  }, [transactionCount, activeDraftId, recycledInvoiceNumbers]);
-
-  // Helper: Consume Nomor Nota
-  const consumeInvoiceNumber = () => {
-      if (recycledInvoiceNumbers.length > 0 && recycledInvoiceNumbers.includes(currentInvoiceNo)) {
-          setRecycledInvoiceNumbers(prev => prev.filter(no => no !== currentInvoiceNo));
-      } else {
-          setTransactionCount(prev => prev + 1);
-      }
-  };
 
   // --- CLICK OUTSIDE HANDLER ---
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      // 1. Transaction Menu
-      if (transactionMenuRef.current && !transactionMenuRef.current.contains(event.target as Node)) {
-        setIsTransactionMenuOpen(false);
-      }
-      // 2. History Menu
+      // 1. History Menu
       if (historyMenuRef.current && !historyMenuRef.current.contains(event.target as Node)) {
         setShowHistory(false);
       }
-      // 3. Profile Menu
+      // 2. Profile Menu
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setIsProfileMenuOpen(false);
       }
-      // 4. View Dropdown
+      // 3. View Dropdown
       if (viewDropdownRef.current && !viewDropdownRef.current.contains(event.target as Node)) {
         setIsViewDropdownOpen(false);
       }
@@ -134,19 +103,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   }, []);
 
   // --- SUPPLIER LOGIC ---
-  const [suppliers, setSuppliers] = useState<Supplier[]>(INITIAL_SUPPLIERS);
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
-  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
-  const [isNewSupplierModalOpen, setIsNewSupplierModalOpen] = useState(false);
-  const [supplierSearch, setSupplierSearch] = useState("");
-
-  // --- State Form New Supplier ---
-  const [newSuppName, setNewSuppName] = useState("");
-  const [newSuppPhone, setNewSuppPhone] = useState("");
-  const [newSuppContact, setNewSuppContact] = useState(""); // Contact Person
-  const [newSuppEmail, setNewSuppEmail] = useState("");
-  const [newSuppAddress, setNewSuppAddress] = useState("");
-  const [newSuppNameError, setNewSuppNameError] = useState(false);
 
   // --- STATE PEMBAYARAN ---
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
@@ -159,15 +116,187 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   // --- STATE KHUSUS HUTANG / JATUH TEMPO ---
   const [jatuhTempoDate, setJatuhTempoDate] = useState("");
   const [isPOModalOpen, setIsPOModalOpen] = useState(false);
+  const [dpAmount, setDpAmount] = useState(0); // Down Payment untuk transaksi HUTANG
+  const [isDpNumpadOpen, setIsDpNumpadOpen] = useState(false);
+  const [dpNumpadValue, setDpNumpadValue] = useState("0");
 
-  const filteredProducts = PRODUCTS.filter((product) =>
-    product.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // --- STATE PAGINATION ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(50);
+  const [totalItems, setTotalItems] = useState(0);
+  const [pageCursors, setPageCursors] = useState<{[key: number]: QueryDocumentSnapshot<DocumentData> | null}>({
+    1: null // Halaman 1 tidak punya cursor startAfter
+  });
 
-  const filteredSuppliers = suppliers.filter((supp) => 
-    supp.name.toLowerCase().includes(supplierSearch.toLowerCase()) || 
-    supp.phone.includes(supplierSearch)
-  );
+  const {userDb, user} = useAuth();
+  const productCollection = 'products';
+
+  // --- STATE NUMBERING CONFIG ---
+  const [numberingConfig, setNumberingConfig] = useState<NumberingConfig | null>(null);
+  
+  // Default numbering config
+  const defaultNumberingConfig: NumberingConfig = {
+    salesPrefix: "SO",
+    purchasePrefix: "PU",
+    separator: "-",
+    yearFormat: "YYYY",
+    includeDay: false,
+    salesCounter: 1,
+    purchaseCounter: 1
+  };
+
+  // --- FETCH DATA FROM FIRESTORE ---
+  useEffect(() => {
+    if (!userDb) return;
+
+    setIsLoadingProducts(true);
+
+    // 1. Array untuk menampung kondisi query
+    let queryConstraints: any[] = [orderBy("name")];
+
+    // 2. Filter hanya produk ACTIVE
+    queryConstraints.push(where("status", "==", "ACTIVE"));
+
+    // 3. Logika SEARCH (Prefix Search)
+    if (searchQuery.trim() !== "") {
+      queryConstraints.push(where("name", ">=", searchQuery));
+      queryConstraints.push(where("name", "<=", searchQuery + "\uf8ff"));
+    }
+
+    // 4. Logika PAGINATION
+    queryConstraints.push(limit(itemsPerPage));
+    
+    if (currentPage > 1 && pageCursors[currentPage - 1]) {
+      queryConstraints.push(startAfter(pageCursors[currentPage - 1]));
+    }
+
+    // 5. Eksekusi Query
+    const q = query(collection(userDb, productCollection), ...queryConstraints);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const items = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as InventoryItem[];
+
+      setListProducts(items);
+
+      if (snapshot.docs.length > 0) {
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        setPageCursors(prev => ({
+          ...prev,
+          [currentPage]: lastDoc
+        }));
+      }
+      setIsLoadingProducts(false);
+    }, (error) => {
+      console.error("Error fetching products: ", error);
+      setIsLoadingProducts(false);
+    });
+
+    return () => unsubscribe();
+  }, [userDb, currentPage, itemsPerPage, searchQuery]);
+
+  // Fetch total count
+  useEffect(() => {
+    const fetchTotalCount = async () => {
+      if (!userDb) return;
+
+      let qConstraints: any[] = [where("status", "==", "ACTIVE")];
+      
+      if (searchQuery.trim() !== "") {
+        qConstraints.push(where("name", ">=", searchQuery));
+        qConstraints.push(where("name", "<=", searchQuery + "\uf8ff"));
+      }
+
+      const q = query(collection(userDb, productCollection), ...qConstraints);
+      const snapshot = await getCountFromServer(q);
+      setTotalItems(snapshot.data().count);
+    };
+
+    fetchTotalCount();
+  }, [userDb, searchQuery]);
+
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+    setPageCursors({ 1: null });
+  }, [searchQuery]);
+
+  // --- FETCH NUMBERING CONFIG FROM COMPANY ---
+  useEffect(() => {
+    if (!user?.companyId) return;
+    
+    const companyDocRef = doc(db, 'companies', user.companyId);
+    
+    const unsubscribe = onSnapshot(companyDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const companyData = docSnap.data() as DocumentData;
+        
+        // Set numbering data from company
+        if (companyData.numbering) {
+          setNumberingConfig(companyData.numbering);
+        } else {
+          // Use default if no numbering config exists
+          setNumberingConfig(defaultNumberingConfig);
+        }
+      }
+    }, (err) => {
+      console.error('Error fetching company numbering config:', err);
+      // Use default on error
+      setNumberingConfig(defaultNumberingConfig);
+    });
+
+    return () => unsubscribe();
+  }, [user?.companyId]);
+
+  // --- PAGINATION LOGIC ---
+  const startIndex = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
+  const endIndex = Math.min(currentPage * itemsPerPage, totalItems);
+  const currentProducts = listProducts;
+
+  const handlePageChange = (direction: 'prev' | 'next') => {
+    if (direction === 'prev' && currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    } else if (direction === 'next' && listProducts.length >= itemsPerPage) {
+      setCurrentPage(prev => prev + 1);
+    }
+    // Scroll to top when page changes
+    const contentArea = document.querySelector('.flex-1.overflow-y-auto');
+    if (contentArea) {
+      contentArea.scrollTop = 0;
+    }
+  };
+
+
+  // --- HELPER FUNCTIONS FOR INVENTORY ITEM ---
+  // Get default unit (the one with sourceConversion === undefined)
+  const getDefaultUnit = (v: InventoryVariant) => {
+    return v.unitConversions.find(uc => uc.sourceConversion === undefined) || v.unitConversions[0];
+  };
+
+  // Get unit conversion by name (case-insensitive)
+  const getUnitConversion = (v: InventoryVariant, unitName: string) => {
+    return v.unitConversions.find(uc => uc.name.toLowerCase() === unitName.toLowerCase());
+  };
+
+  // Get available units from variant
+  const getAvailableUnits = (v: InventoryVariant) => {
+    if (!v.unitConversions || v.unitConversions.length === 0) {
+      return [];
+    }
+    return v.unitConversions.map(uc => uc.name);
+  };
+
+  // Get purchase price from variant and unit
+  const getPurchasePrice = (v: InventoryVariant, unitName: string) => {
+    const unitConversion = getUnitConversion(v, unitName);
+    if (!unitConversion) {
+      const defaultUnit = getDefaultUnit(v);
+      return defaultUnit ? defaultUnit.purchasePrice : 0;
+    }
+    return unitConversion.purchasePrice;
+  };
 
   // SUBTOTAL
   const subTotal = cart.reduce((acc, item) => {
@@ -177,7 +306,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
   // Logic Sisa Tagihan 
   const isHutang = selectedPaymentMethod === 'HUTANG';
-  const sisaTagihan = isHutang ? 0 : Math.max(0, subTotal - paymentAmount);
+  const sisaTagihan = isHutang ? Math.max(0, subTotal - dpAmount) : Math.max(0, subTotal - paymentAmount);
   const kembalian = isHutang ? 0 : Math.max(0, paymentAmount - subTotal);
 
   // --- HANDLER LOGOUT ---
@@ -206,38 +335,43 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   };
 
   // Logic Add List View
-  const handleAddToListCart = (product: Product) => {
+  const handleAddToListCart = (product: InventoryItem) => {
+    if (product.variants.length === 0) return;
+    
     const selection = getListSelection(product.id);
-    const finalVariant = selection.variant || product.variants[0];
-    const finalUnitName = selection.unit || product.availableUnits[0].name;
+    const selectedVariantName = selection.variant || product.variants[0].name;
+    const selectedVariant = product.variants.find(v => v.name === selectedVariantName) || product.variants[0];
+    
+    const availableUnits = getAvailableUnits(selectedVariant);
+    if (availableUnits.length === 0) return;
+    
+    const finalUnitName = selection.unit || availableUnits[0];
     const finalQty = 1; 
     const finalNote = selection.note || "";
-
-    const unitObj = product.availableUnits.find(u => u.name === finalUnitName) || product.availableUnits[0];
-    const finalPrice = product.basePrice * unitObj.priceMultiplier; // Harga Beli Estimasi
+    const finalPrice = getPurchasePrice(selectedVariant, finalUnitName);
 
     const newItem: ExtendedCartItem = {
         id: Date.now() + Math.random(), 
         productId: product.id,
         name: product.name,
         price: finalPrice,
-        image: product.image,
+        image: product.image && product.image.length > 0 ? product.image[0] : "",
         qty: finalQty, 
         qtyPO: 0,      
         unit: finalUnitName,
-        size: finalVariant,
+        size: selectedVariantName,
         note: finalNote
     };
     setCart([...cart, newItem]);
     updateListSelection(product.id, 'note', "");
   };
 
-  const handleCartUnitChange = (cartItemId: number, productId: string, newUnitName: string) => {
-    const product = PRODUCTS.find(p => p.id === productId);
+  const handleCartUnitChange = (cartItemId: number, productId: string, newUnitName: string, variantName: string) => {
+    const product = listProducts.find(p => p.id === productId);
     if (!product) return;
-    const newUnitObj = product.availableUnits.find(u => u.name === newUnitName);
-    if (!newUnitObj) return;
-    const newPrice = product.basePrice * newUnitObj.priceMultiplier;
+    const variant = product.variants.find(v => v.name === variantName);
+    if (!variant) return;
+    const newPrice = getPurchasePrice(variant, newUnitName);
 
     setCart(prev => prev.map(item => 
         item.id === cartItemId 
@@ -246,70 +380,42 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     ));
   };
 
-  // --- SUPPLIER LOGIC ---
-  const handleOpenNewSupplier = () => {
-    setIsSupplierModalOpen(false);
-    setIsNewSupplierModalOpen(true);
-    setNewSuppName("");
-    setNewSuppPhone("");
-    setNewSuppContact("");
-    setNewSuppAddress("");
-    setNewSuppEmail("");
-    setNewSuppNameError(false);
-  };
-
-  const handleSubmitNewSupplier = () => {
-    if (!newSuppName.trim()) {
-      setNewSuppNameError(true);
-      return;
-    }
-    const newSupplier: Supplier = {
-      id: Date.now(), 
-      name: newSuppName,
-      phone: newSuppPhone,
-      contact: newSuppContact,
-      email: newSuppEmail,
-      address: newSuppAddress
-    };
-    
-    setSuppliers([...suppliers, newSupplier]);
-    setSelectedSupplier(newSupplier);
-    setIsNewSupplierModalOpen(false);
-  };
-
-  const handleSelectSupplier = (supp: Supplier) => {
-    setSelectedSupplier(supp);
-    setIsSupplierModalOpen(false);
-  };
 
   // --- PRODUCT MODAL ---
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = (product: InventoryItem) => {
+    if (product.variants.length === 0) return;
     setSelectedProduct(product);
     setModalQty(1);
-    setModalUnit(product.availableUnits[0].name);
-    setModalSize(product.variants[0]);
+    const firstVariant = product.variants[0];
+    const availableUnits = getAvailableUnits(firstVariant);
+    setModalUnit(availableUnits.length > 0 ? availableUnits[0] : "");
+    setModalVariant(firstVariant);
     setModalNote("");
   };
 
   const closeProductModal = () => {
     setSelectedProduct(null);
+    setModalVariant(null);
   };
 
   const handleSaveToCart = () => {
-    if (!selectedProduct) return;
-    const unitObj = selectedProduct.availableUnits.find(u => u.name === modalUnit) || selectedProduct.availableUnits[0];
-    const finalPrice = selectedProduct.basePrice * unitObj.priceMultiplier;
+    if (!selectedProduct || !modalVariant) return;
+    const availableUnits = getAvailableUnits(modalVariant);
+    if (availableUnits.length === 0) return;
+    
+    const finalUnit = modalUnit || availableUnits[0];
+    const finalPrice = getPurchasePrice(modalVariant, finalUnit);
     
     const newItem: ExtendedCartItem = {
       id: Date.now() + Math.random(),
       productId: selectedProduct.id,
       name: selectedProduct.name,
       price: finalPrice,
-      image: selectedProduct.image,
+      image: selectedProduct.image && selectedProduct.image.length > 0 ? selectedProduct.image[0] : "",
       qty: modalQty, 
       qtyPO: 0,      
-      unit: modalUnit,
-      size: modalSize,
+      unit: finalUnit,
+      size: modalVariant.name,
       note: modalNote
     };
     setCart([...cart, newItem]);
@@ -334,13 +440,21 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   };
 
   // --- DRAFT LOGIC ---
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (cart.length === 0) return;
+    
+    try {
+      // Generate invoice number baru untuk draft baru
+      let invoiceNo = currentInvoiceNo;
+      if (activeDraftId === null && numberingConfig) {
+        invoiceNo = await generatePurchaseId();
+      }
+      
     const currentDate = new Date().toLocaleString('id-ID');
     
     const newDraft: DraftPurchase = {
         id: activeDraftId || Date.now(),
-        invoiceNumber: currentInvoiceNo, 
+          invoiceNumber: invoiceNo, 
         items: [...cart],
         total: subTotal,
         date: currentDate,
@@ -348,20 +462,25 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     };
 
     if (activeDraftId !== null) {
+        // WOI BACKEND JORDY: UPDATE data draft pembelian di database
+        // PUT /api/purchase-drafts/{activeDraftId} dengan body: newDraft
         setDraftTransactions(prev => prev.map(d => d.id === activeDraftId ? newDraft : d));
     } else {
+        // WOI BACKEND JORDY: INSERT data draft pembelian baru ke database
+        // POST /api/purchase-drafts dengan body: newDraft
         setDraftTransactions(prev => [...prev, newDraft]);
-    }
-    
-    const isNewTransaction = activeDraftId === null;
-    if (isNewTransaction) {
-        consumeInvoiceNumber();
+          // Update currentInvoiceNo dengan yang baru
+          setCurrentInvoiceNo(invoiceNo);
     }
 
     setCart([]);
     setActiveDraftId(null);
     setSelectedSupplier(null);
     alert("Draft Pembelian tersimpan.");
+    } catch (error) {
+      console.error("Error saving draft:", error);
+      alert("Gagal menyimpan draft. Silakan coba lagi.");
+    }
   };
 
   const handleRestoreDraft = (draft: DraftPurchase) => {
@@ -376,14 +495,14 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   const handleDeleteDraft = (e: React.MouseEvent, id: number) => {
     e.stopPropagation(); 
     if (window.confirm("Hapus draft ini?")) {
-        // Recycle logic
-        const draftToDelete = draftTransactions.find(d => d.id === id);
-        if (draftToDelete) {
-             setRecycledInvoiceNumbers(prev => [...prev, draftToDelete.invoiceNumber].sort());
-        }
-
+        // WOI BACKEND JORDY: DELETE data draft pembelian dari database
+        // DELETE /api/purchase-drafts/{id}
         setDraftTransactions(prev => prev.filter(d => d.id !== id));
-        if (activeDraftId === id) setActiveDraftId(null);
+        if (activeDraftId === id) {
+          setActiveDraftId(null);
+          // Reset invoice number saat draft dihapus agar generate yang baru
+          setCurrentInvoiceNo("");
+        }
     }
   };
 
@@ -394,36 +513,86 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
   };
 
   const handleOpenFakturKredit = () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) {
+      alert("Keranjang masih kosong!");
+      return;
+    }
+    
+    if (!selectedSupplier) {
+      alert("Mohon pilih supplier terlebih dahulu sebelum mencetak faktur!");
+      return;
+    }
+    
     setJatuhTempoDate(""); 
+    setDpAmount(0);
     setIsPOModalOpen(true);
   };
 
-  const handleFinalizeCredit = () => {
+  const handleFinalizeCredit = async () => {
+    try {
     if (!jatuhTempoDate) {
         alert("Harap isi Tanggal Jatuh Tempo!");
         return;
     }
     
-    const isNewTransaction = activeDraftId === null;
-    if (activeDraftId !== null) {
+      // Validasi supplier
+      if (!selectedSupplier) {
+        alert("Mohon pilih supplier terlebih dahulu!");
+        return;
+      }
+
+      // Validasi invoice number sudah ada
+      if (!currentInvoiceNo) {
+        alert("Invoice number belum di-generate. Silakan tunggu sebentar dan coba lagi.");
+        return;
+      }
+
+      // Map cart items ke ProductPurchaseDetail
+      const productDetails = mapCartItemsToProductPurchaseDetail(cart);
+
+      // Format data sesuai PurchaseTransaction type untuk KREDIT (PO) dengan ID (gunakan currentInvoiceNo)
+      const purchaseTransaction: PurchaseTransaction = {
+        id: currentInvoiceNo,
+        supplierId: selectedSupplier.id,
+        supplierName: selectedSupplier.name,
+        productDetail: productDetails,
+        isHutang: true,
+        deadlineDate: new Date(jatuhTempoDate),
+        dp: dpAmount, // DP untuk PO/KREDIT
+        paymentMethod: 'TUNAI', // Default untuk PO
+        paymentValue: dpAmount,
+        remainingPayment: subTotal - dpAmount
+      };
+
+      // POST ke backend dengan ID yang sudah di-generate
+      await authenticatedAxios.post(`${API_BASE_URL}/api/purchases`, purchaseTransaction);
+
+      // Jika berhasil, reset state
+      if (activeDraftId !== null) {
         setDraftTransactions(prev => prev.filter(d => d.id !== activeDraftId));
-    }
+      }
     
-    setIsPOModalOpen(false);
-    setIsSuccessModalOpen(false);
-    setCart([]);
-    setPaymentAmount(0);
-    setSelectedPaymentMethod("");
-    setActiveDraftId(null);
-    setJatuhTempoDate("");
-    setSelectedSupplier(null);
+      const savedInvoiceNo = currentInvoiceNo; // Simpan invoice number yang digunakan
+      const savedJatuhTempo = jatuhTempoDate; // Simpan jatuh tempo
+      const savedDpAmount = dpAmount; // Simpan DP amount
+      
+      setIsPOModalOpen(false);
+      setIsSuccessModalOpen(false);
+      setCart([]);
+      setPaymentAmount(0);
+      setSelectedPaymentMethod("");
+      setActiveDraftId(null);
+      setJatuhTempoDate("");
+      setSelectedSupplier(null);
+      setDpAmount(0);
+      // Reset invoice number agar generate yang baru di useEffect (saat activeDraftId menjadi null)
+      setCurrentInvoiceNo("");
 
-    if (isNewTransaction) {
-        consumeInvoiceNumber();
+      alert(`Pembelian PO (KREDIT) berhasil dicatat!\nID: ${savedInvoiceNo}\nJatuh Tempo: ${savedJatuhTempo}\nDP: ${formatRupiah(savedDpAmount)}`);
+    } catch (error: any) {
+      console.error("Error saving purchase transaction (KREDIT):", error);
+      alert(error.response?.data?.message || "Gagal menyimpan transaksi pembelian PO. Silakan coba lagi.");
     }
-
-    alert(`Pembelian PO (KREDIT) berhasil dicatat!\nJatuh Tempo: ${jatuhTempoDate}`);
   };
 
   // --- PEMBAYARAN ---
@@ -495,50 +664,250 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
     setSelectedPaymentMethod("LAINNYA");
   };
 
+  // --- DP NUMPAD LOGIC ---
+  const openDpNumpad = () => {
+    setDpNumpadValue(String(dpAmount) || "0");
+    setIsDpNumpadOpen(true);
+  };
+
+  const appendDpDigit = (digit: string) => {
+    setDpNumpadValue(prev => prev === "0" ? digit : prev + digit);
+  };
+
+  const backspaceDpDigit = () => {
+    setDpNumpadValue(prev => {
+      const next = prev.slice(0, -1);
+      return next === "" ? "0" : next;
+    });
+  };
+
+  const confirmDpNumpad = () => {
+    const newDp = parseInt(dpNumpadValue) || 0;
+    if (newDp > subTotal) {
+      alert("DP tidak boleh melebihi total tagihan!");
+      return;
+    }
+    setDpAmount(newDp);
+    setIsDpNumpadOpen(false);
+  };
+
+  // --- HELPER FUNCTION: FETCH PURCHASE TRANSACTIONS COUNT ---
+  const fetchPurchaseTransactionsCount = async (dateFilter: string): Promise<number> => {
+    try {
+      // Format dateFilter: "YYYY-MM-DD" untuk includeDay=true atau "YYYY-MM" untuk includeDay=false
+      const response = await authenticatedAxios.get(`${API_BASE_URL}/api/purchases/count`, {
+        params: { dateFilter }
+      });
+      return response.data.count || 0;
+    } catch (error: any) {
+      console.error("Error fetching purchase transactions count:", error);
+      return 0;
+    }
+  };
+
+  // --- HELPER FUNCTION: GENERATE PURCHASE ID ---
+  const generatePurchaseId = async (): Promise<string> => {
+    const config = numberingConfig || defaultNumberingConfig;
+    const date = new Date();
+    
+    // Format year sesuai yearFormat
+    const yearFull = date.getFullYear().toString();
+    const year = config.yearFormat === 'YY' ? yearFull.slice(-2) : yearFull;
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    // Buat datePart sesuai includeDay
+    let dateFilter: string;
+    let datePart: string;
+    
+    if (config.includeDay) {
+      // Per hari: format YYYY-MM-DD atau YY-MM-DD untuk filter
+      dateFilter = `${yearFull}-${month}-${day}`;
+      datePart = `${year}${month}${day}`;
+    } else {
+      // Per bulan: format YYYY-MM atau YY-MM untuk filter
+      dateFilter = `${yearFull}-${month}`;
+      datePart = `${year}${month}`;
+    }
+    
+    // Fetch count purchase transactions sesuai format
+    const count = await fetchPurchaseTransactionsCount(dateFilter);
+    
+    // Generate counter: count + 1 (counter dimulai dari 1 jika belum ada transaksi)
+    const counter = count + 1;
+    
+    // Format: prefix + datePart + separator + counter (tanpa padding)
+    return `${config.purchasePrefix}${datePart}${config.separator}${counter}`;
+  };
+
+  // --- UPDATE INVOICE NUMBER SAAT NUMBERING CONFIG READY DAN TIDAK ADA DRAFT AKTIF ---
+  useEffect(() => {
+    const updateInvoiceNumber = async () => {
+      // Hanya generate invoice baru jika tidak ada draft aktif dan numberingConfig sudah ready
+      // Juga generate jika currentInvoiceNo kosong (saat baru buka atau setelah transaksi selesai)
+      if (activeDraftId === null && numberingConfig) {
+        try {
+          const invoiceNumber = await generatePurchaseId();
+          setCurrentInvoiceNo(invoiceNumber);
+        } catch (error) {
+          console.error("Error generating invoice number:", error);
+          // Fallback ke format default jika error
+          const date = new Date();
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          setCurrentInvoiceNo(`PU${year}${month}-1`);
+        }
+      }
+    };
+
+    updateInvoiceNumber();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numberingConfig, activeDraftId]);
+
+  // --- HELPER FUNCTION: MAP CART ITEMS TO ProductPurchaseDetail ---
+  const mapCartItemsToProductPurchaseDetail = (cartItems: ExtendedCartItem[]): ProductPurchaseDetail[] => {
+    return cartItems.map(item => {
+      const product = listProducts.find(p => p.id === item.productId);
+      if (!product) {
+        throw new Error(`Product with id ${item.productId} not found`);
+      }
+
+      const variant = product.variants.find(v => v.name === item.size);
+      if (!variant) {
+        throw new Error(`Variant ${item.size} not found for product ${product.name}`);
+      }
+
+      const variantNum = product.variants.findIndex(v => v.name === item.size);
+      if (variantNum === -1) {
+        throw new Error(`Variant ${item.size} index not found`);
+      }
+
+      const unitConversion = variant.unitConversions.find(uc => uc.name === item.unit);
+      if (!unitConversion) {
+        throw new Error(`Unit ${item.unit} not found for variant ${variant.name}`);
+      }
+
+      const unitNum = variant.unitConversions.findIndex(uc => uc.name === item.unit);
+      if (unitNum === -1) {
+        throw new Error(`Unit ${item.unit} index not found`);
+      }
+
+      return {
+        productId: item.productId,
+        productName: item.name,
+        variantNum: variantNum,
+        variantName: item.size,
+        unitNum: unitNum,
+        unitName: item.unit,
+        purchasePrice: item.price,
+        qty: item.qty + (item.qtyPO || 0)
+      };
+    });
+  };
+
   const handleOpenPayment = () => {
-    if (cart.length === 0) return; 
+    if (cart.length === 0) {
+      alert("Keranjang masih kosong!");
+      return;
+    }
+    
+    if (!selectedSupplier) {
+      alert("Mohon pilih supplier terlebih dahulu sebelum melanjutkan ke pembayaran!");
+      return;
+    }
+    
     setPaymentAmount(0);
     setSelectedPaymentMethod("");
     setJatuhTempoDate("");
+    setDpAmount(0);
     setIsPaymentModalOpen(true);
   };
 
   const handleQuickPayment = (methodName: string) => {
     if (methodName === 'HUTANG') {
         setPaymentAmount(0); 
+        setDpAmount(0); // Reset DP saat pilih HUTANG
     } else {
         setPaymentAmount(subTotal);
+        setDpAmount(0);
     }
     setSelectedPaymentMethod(methodName);
   };
 
   const handleProcessPayment = () => {
-    if (selectedPaymentMethod === 'HUTANG' && !jatuhTempoDate) {
+    if (selectedPaymentMethod === 'HUTANG') {
+        if (!jatuhTempoDate) {
         alert("Mohon isi Tanggal Jatuh Tempo untuk pembayaran HUTANG!");
         return;
     }
-    if (selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0) return;
+        if (dpAmount > subTotal) {
+            alert("DP tidak boleh melebihi total tagihan!");
+            return;
+        }
+    } else {
+        if (sisaTagihan > 0) return;
+    }
     
     setIsPaymentModalOpen(false);
     setIsSuccessModalOpen(true);
   };
 
-  const handleFinishTransaction = () => {
-    const isNewTransaction = activeDraftId === null;
+  const handleFinishTransaction = async () => {
+    try {
+      // Validasi supplier
+      if (!selectedSupplier) {
+        alert("Mohon pilih supplier terlebih dahulu!");
+        return;
+      }
+
+      // Validasi invoice number sudah ada
+      if (!currentInvoiceNo) {
+        alert("Invoice number belum di-generate. Silakan tunggu sebentar dan coba lagi.");
+        return;
+      }
+
+      // Map cart items ke ProductPurchaseDetail
+      const productDetails = mapCartItemsToProductPurchaseDetail(cart);
+
+      // Format data sesuai PurchaseTransaction type dengan ID (gunakan currentInvoiceNo)
+      const purchaseTransaction: PurchaseTransaction = {
+        id: currentInvoiceNo,
+        supplierId: selectedSupplier.id,
+        supplierName: selectedSupplier.name,
+        productDetail: productDetails,
+        isHutang: isHutang,
+        deadlineDate: isHutang && jatuhTempoDate ? new Date(jatuhTempoDate) : undefined,
+        dp: isHutang ? dpAmount : 0,
+        paymentMethod: selectedPaymentMethod === 'TRANSFER' ? 'Transfer' : 'TUNAI',
+        paymentValue: isHutang ? dpAmount : paymentAmount,
+        remainingPayment: isHutang ? (subTotal - dpAmount) : 0
+      };
+
+      // POST ke backend dengan ID yang sudah di-generate
+      await authenticatedAxios.post(`${API_BASE_URL}/api/purchases`, purchaseTransaction);
+
+      // Jika berhasil, reset state
     if (activeDraftId !== null) {
         setDraftTransactions(prev => prev.filter(d => d.id !== activeDraftId));
     }
     
-    setIsSuccessModalOpen(false);
-    setCart([]);
-    setPaymentAmount(0);
-    setSelectedPaymentMethod("");
-    setActiveDraftId(null);
-    setJatuhTempoDate("");
-    setSelectedSupplier(null);
+      const savedInvoiceNo = currentInvoiceNo; // Simpan invoice number yang digunakan
+      
+      setIsSuccessModalOpen(false);
+      setCart([]);
+      setPaymentAmount(0);
+      setSelectedPaymentMethod("");
+      setActiveDraftId(null);
+      setJatuhTempoDate("");
+      setSelectedSupplier(null);
+      setDpAmount(0);
+      // Reset invoice number agar generate yang baru di useEffect (saat activeDraftId menjadi null)
+      setCurrentInvoiceNo("");
 
-    if (isNewTransaction) {
-        consumeInvoiceNumber();
+      alert(`Transaksi pembelian berhasil disimpan!\nID: ${savedInvoiceNo}`);
+    } catch (error: any) {
+      console.error("Error saving purchase transaction:", error);
+      alert(error.response?.data?.message || "Gagal menyimpan transaksi pembelian. Silakan coba lagi.");
     }
   };
 
@@ -605,16 +974,27 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
         {/* CONTENT AREA */}
         <div className="flex-1 overflow-y-auto p-4 bg-gray-50 pb-20 lg:pb-4">
-          {viewMode === 'GRID' ? (
+          {isLoadingProducts ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-10 h-10 animate-spin text-blue-500"/>
+            </div>
+          ) : viewMode === 'GRID' ? (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 lg:gap-4">
-                {filteredProducts.length > 0 ? (
-                    filteredProducts.map((product) => (
-                    <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white p-2 flex flex-col items-center hover:shadow-lg transition-shadow cursor-pointer rounded-lg shadow-sm border border-gray-100">
-                        <img src={product.image} alt={product.name} className="w-full h-24 lg:h-32 object-contain mb-2" />
-                        <p className="text-green-600 font-bold text-sm">{formatRupiah(product.basePrice)}</p>
-                        <p className="text-xs text-center text-gray-700 mt-1 line-clamp-2">{product.name}</p>
-                    </div>
-                    ))
+                {currentProducts.length > 0 ? (
+                    currentProducts.map((product) => {
+                      // Get first variant and default unit for display
+                      const firstVariant = product.variants && product.variants.length > 0 ? product.variants[0] : null;
+                      const defaultPrice = firstVariant ? getPurchasePrice(firstVariant, getAvailableUnits(firstVariant)[0] || "") : 0;
+                      const productImage = product.image && product.image.length > 0 ? product.image[0] : "";
+                      
+                      return (
+                        <div key={product.id} onClick={() => handleProductClick(product)} className="bg-white p-2 flex flex-col items-center hover:shadow-lg transition-shadow cursor-pointer rounded-lg shadow-sm border border-gray-100">
+                          <img src={productImage} alt={product.name} className="w-full h-24 lg:h-32 object-contain mb-2" />
+                          <p className="text-green-600 font-bold text-sm">{formatRupiah(defaultPrice)}</p>
+                          <p className="text-xs text-center text-gray-700 mt-1 line-clamp-2">{product.name}</p>
+                        </div>
+                      );
+                    })
                 ) : (
                     <div className="col-span-full text-center text-gray-500 mt-10">Produk tidak ditemukan.</div>
                 )}
@@ -629,13 +1009,16 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                     <div className="col-span-3 hidden lg:block text-left pl-2">Keterangan</div>
                     <div className="col-span-4 lg:col-span-1">Aksi</div>
                  </div>
-                 {filteredProducts.map((product) => {
+                 {currentProducts.map((product) => {
+                     if (product.variants.length === 0) return null;
+                     
                      const selection = getListSelection(product.id);
-                     const currentVariant = selection.variant || product.variants[0];
-                     const currentUnitName = selection.unit || product.availableUnits[0].name;
+                     const selectedVariantName = selection.variant || product.variants[0].name;
+                     const selectedVariant = product.variants.find(v => v.name === selectedVariantName) || product.variants[0];
+                     const availableUnits = getAvailableUnits(selectedVariant);
+                     const currentUnitName = selection.unit || (availableUnits.length > 0 ? availableUnits[0] : "");
                      const currentNote = selection.note || "";
-                     const unitObj = product.availableUnits.find(u => u.name === currentUnitName) || product.availableUnits[0];
-                     const displayPrice = product.basePrice * unitObj.priceMultiplier;
+                     const displayPrice = getPurchasePrice(selectedVariant, currentUnitName);
 
                      return (
                         <div key={product.id} className="grid grid-cols-12 border-b border-gray-100 py-2 px-2 items-center hover:bg-blue-50/50 transition-colors text-sm">
@@ -645,13 +1028,23 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                             </div>
                             <div className="col-span-3 lg:col-span-2 pr-1">
                                 <div className="relative">
-                                    <select className="w-full appearance-none border border-gray-300 rounded-md py-1 pl-2 pr-6 text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer" value={currentVariant} onChange={(e) => updateListSelection(product.id, 'variant', e.target.value)}>{product.variants.map(v => <option key={v} value={v}>{v}</option>)}</select>
+                                    <select className="w-full appearance-none border border-gray-300 rounded-md py-1 pl-2 pr-6 text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer" value={selectedVariantName} onChange={(e) => {
+                                      updateListSelection(product.id, 'variant', e.target.value);
+                                      // Reset unit when variant changes
+                                      const newVariant = product.variants.find(v => v.name === e.target.value);
+                                      if (newVariant) {
+                                        const newUnits = getAvailableUnits(newVariant);
+                                        if (newUnits.length > 0) {
+                                          updateListSelection(product.id, 'unit', newUnits[0]);
+                                        }
+                                      }
+                                    }}>{product.variants.map(v => <option key={v.name} value={v.name}>{v.name}</option>)}</select>
                                     <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none"/>
                                 </div>
                             </div>
                             <div className="col-span-1 pr-1 hidden lg:block">
                                 <div className="relative">
-                                    <select className="w-full appearance-none border border-gray-300 rounded-md py-1 pl-1 pr-5 text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer text-center font-bold" value={currentUnitName} onChange={(e) => updateListSelection(product.id, 'unit', e.target.value)}>{product.availableUnits.map(u => <option key={u.name} value={u.name}>{u.name}</option>)}</select>
+                                    <select className="w-full appearance-none border border-gray-300 rounded-md py-1 pl-1 pr-5 text-xs bg-white focus:outline-none focus:border-blue-500 cursor-pointer text-center font-bold" value={currentUnitName} onChange={(e) => updateListSelection(product.id, 'unit', e.target.value)}>{availableUnits.map(u => <option key={u} value={u}>{u}</option>)}</select>
                                     <ChevronDown className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none"/>
                                 </div>
                             </div>
@@ -669,6 +1062,30 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                  })}
               </div>
           )}
+        </div>
+
+        {/* PAGINATION FOOTER */}
+        <div className="bg-white border-t border-gray-200 p-4 flex justify-between items-center sticky bottom-0 z-20 shadow-2xl">
+            <div className="text-gray-800 font-medium">
+                Menampilkan <span className="font-bold">{startIndex} - {endIndex}</span> dari <span className="font-bold">{totalItems}</span> Produk (Halaman {currentPage})
+            </div>
+            <div className="flex items-center gap-4">
+                <button 
+                    onClick={() => handlePageChange('prev')} 
+                    disabled={currentPage === 1} 
+                    className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                >
+                    <ChevronLeft className="w-4 h-4"/> Balik
+                </button>
+                
+                <button 
+                    onClick={() => handlePageChange('next')} 
+                    disabled={listProducts.length < itemsPerPage} 
+                    className="px-4 py-2 rounded bg-[#BEDFFF] hover:bg-blue-300 text-blue-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                >
+                    Lanjut <ChevronRight className="w-4 h-4"/>
+                </button>
+            </div>
         </div>
 
         {/* FLOATING ACTION BAR FOR MOBILE */}
@@ -751,44 +1168,16 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         </div>
 
         {/* SUPPLIER SECTION & TRANSACTION DROPDOWN */}
-        <div 
-          className="px-3 py-2 border-b border-black cursor-pointer hover:bg-gray-100 transition-colors bg-white group select-none shrink-0"
-          onClick={() => setIsSupplierModalOpen(true)}
-          title="Klik untuk ganti supplier"
-        >
-          <div className="flex items-center gap-2">
-             <div className="border border-black rounded-full p-1 group-hover:border-blue-500 transition-colors">
-               <Building2 className="w-5 h-5 group-hover:text-blue-500 transition-colors" />
-             </div>
-             <div className="flex-1">
-               
-               {/* TRANSACTION TYPE - FIXED OPTIONS */}
-               <div className="relative text-center" ref={transactionMenuRef} onClick={(e) => e.stopPropagation()}>
-                   <h2 
-                      className="text-base font-bold text-center flex items-center justify-center gap-1 hover:text-blue-700 transition-colors select-none cursor-pointer"
-                      onClick={() => setIsTransactionMenuOpen(!isTransactionMenuOpen)}
-                   >
-                       {transactionMode === 'TUNAI' ? 'PEMBELIAN' : 'PEMBELIAN PO'}
-                       <ChevronDown className="w-4 h-4"/>
-                   </h2>
-                   
-                   {isTransactionMenuOpen && (
-                       <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
-                           <button onClick={() => { setTransactionMode('TUNAI'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'TUNAI' ? 'text-blue-600 bg-blue-50' : 'text-gray-700'}`}>PEMBELIAN</button>
-                           <button onClick={() => { setTransactionMode('KREDIT'); setIsTransactionMenuOpen(false); }} className={`w-full px-3 py-2 text-left hover:bg-gray-100 text-xs font-bold ${transactionMode === 'KREDIT' ? 'text-yellow-600 bg-yellow-50' : 'text-gray-700'}`}>PEMBELIAN PO</button>
-                       </div>
-                   )}
-               </div>
-
-               <div className="flex justify-between text-xs items-center mt-0.5">
-                 <span className="font-bold text-blue-800 truncate max-w-[150px]">
-                    {selectedSupplier ? selectedSupplier.name : "Pilih Supplier"}
-                 </span>
-                 <span className="font-bold">{currentInvoiceNo}</span>
-                </div>
-             </div>
-          </div>
-        </div>
+        <SupplierSelector
+          selectedSupplier={selectedSupplier}
+          onSelectSupplier={setSelectedSupplier}
+          currentInvoiceNo={currentInvoiceNo}
+          transactionMode={transactionMode}
+          onTransactionModeChange={(mode) => {
+            setTransactionMode(mode);
+          }}
+          transactionMenuRef={transactionMenuRef}
+        />
 
         {/* HEADER TABEL CART */}
         <div className={`grid grid-cols-12 gap-1 px-2 py-1 text-xs font-semibold border-b border-gray-300 text-center z-10 bg-white relative transition-colors shrink-0 ${transactionMode === 'KREDIT' ? 'bg-yellow-50' : ''}`}>
@@ -809,67 +1198,143 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         {/* LIST ITEM CART */}
         <div className="flex-1 overflow-y-auto relative bg-white">
           <div className="relative z-10">
-          {cart.length === 0 ? <div className="flex items-center justify-center h-40 text-xs text-gray-400 italic">Belum ada item</div> : (
-            cart.map((item) => {
-               const originalProduct = PRODUCTS.find(p => p.id === item.productId);
-               const totalQtyItem = item.qty + (item.qtyPO || 0);
+            {cart.length === 0 ? <div className="flex items-center justify-center h-40 text-xs text-gray-400 italic">Belum ada item</div> : (
+              [...cart].sort((a, b) => a.name.localeCompare(b.name)).map((item) => {
+                const originalProduct = listProducts.find(p => p.id === item.productId);
+                const totalQtyItem = item.qty + (item.qtyPO || 0);
 
-               return (
-                <div key={item.id} className="grid grid-cols-12 gap-1 px-2 py-2 items-start text-xs border-b border-gray-100 hover:bg-gray-50/80 bg-white/50 backdrop-blur-[1px]">
+                return transactionMode === 'KREDIT' ? (
+                  // VERTICAL LAYOUT untuk KREDIT MODE
+                  <div key={item.id} className="border-b border-gray-200 p-3 hover:bg-gray-50/80 bg-white">
+                    {/* Row 1: Product Name & Price */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex-1 pr-4">
+                        <h3 className="font-semibold text-base text-gray-800 leading-snug break-words whitespace-normal">
+                          {item.name}
+                        </h3>
+                        {item.size && <p className="text-xs text-gray-500 mt-1">{item.size}</p>}
+                        {item.note && <p className="text-xs text-gray-500 italic mt-1">"{item.note}"</p>}
+                      </div>
+                      <div className="text-right">
+                        <div className="text-green-600 text-lg font-bold whitespace-nowrap">
+                          {formatRupiah(item.price * totalQtyItem)}
+                        </div>
+                        <div className="flex items-center justify-end gap-1 text-xs text-gray-500">
+                          {formatRupiah(item.price)}/{item.unit}
+                          <button onClick={() => startEditPrice(item.id, item.price)} className="ml-1"><Edit2 className="w-4 h-4 text-gray-400 hover:text-black cursor-pointer" /></button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Controls (Trash, Qty, Qty PO, Unit) */}
+                    <div className="flex items-center gap-3 pt-3 border-t border-gray-100">
+                      {/* Trash */}
+                      <button
+                        onClick={() => removeItem(item.id)}
+                        className="p-2 hover:bg-red-50 rounded-md transition-colors"
+                      >
+                        <Trash2 className="w-5 h-5 text-red-500 hover:text-red-700" />
+                      </button>
+
+                      {/* Qty Fisik */}
+                      <div className="flex flex-col items-center min-w-[110px]">
+                        <span className="text-[10px] font-semibold text-blue-700 mb-1">QTY FISIK</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="w-8 h-8 flex items-center justify-center text-lg font-bold text-blue-500 hover:bg-blue-50 rounded-md transition-colors"
+                            onClick={() => decrementQty(item.id)}
+                          >
+                            -
+                          </button>
+                          <span className="w-10 text-center text-lg font-bold text-blue-700">
+                            {item.qty}
+                          </span>
+                          <button
+                            className="w-8 h-8 flex items-center justify-center text-lg font-bold text-blue-500 hover:bg-blue-50 rounded-md transition-colors"
+                            onClick={() => incrementQty(item.id)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Qty PO */}
+                      <div className="flex flex-col items-center min-w-[110px]">
+                        <span className="text-[10px] font-semibold text-orange-700 mb-1">QTY PO</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="w-8 h-8 flex items-center justify-center text-lg font-bold text-orange-500 hover:bg-orange-50 rounded-md transition-colors"
+                            onClick={() => decrementQtyPO(item.id)}
+                          >
+                            -
+                          </button>
+                          <span className="w-10 text-center text-lg font-bold text-orange-700">
+                            {item.qtyPO || 0}
+                          </span>
+                          <button
+                            className="w-8 h-8 flex items-center justify-center text-lg font-bold text-orange-500 hover:bg-orange-50 rounded-md transition-colors"
+                            onClick={() => incrementQtyPO(item.id)}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Unit Selector */}
+                      <div className="flex flex-col items-center min-w-[90px]">
+                        <span className="text-[10px] font-semibold text-gray-600 mb-1">UNIT</span>
+                        {originalProduct ? (
+                          <select
+                            className="text-sm font-medium border-none bg-transparent focus:outline-none cursor-pointer text-center"
+                            value={item.unit}
+                            onChange={(e) => handleCartUnitChange(item.id, item.productId, e.target.value, item.size)}
+                          >
+                            {originalProduct.variants[0].unitConversions.map(u => (
+                              <option key={u.name} value={u.name}>{u.name}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-sm font-medium">{item.unit}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // HORIZONTAL LAYOUT untuk mode TUNAI
+                  <div key={item.id} className="grid grid-cols-12 gap-1 px-2 py-2 items-center text-xs border-b border-gray-100 hover:bg-gray-50/80 bg-white/50 backdrop-blur-[1px]">
                     {/* 1. TRASH */}
-                    <div className="col-span-1 flex justify-center pt-0.5"><button onClick={() => removeItem(item.id)}><Trash2 className="w-4 h-4 text-black cursor-pointer hover:text-red-600" /></button></div>
-                    
-                    {/* 2. LOGIC QTY */}
-                    {transactionMode === 'KREDIT' ? (
-                        <div className="col-span-3 grid grid-cols-2 gap-1">
-                            {/* QTY FISIK */}
-                            <div className="flex flex-col items-center justify-start gap-0.5">
-                                <div className="flex items-center">
-                                    <button className="text-sm font-bold px-1 text-blue-400 hover:text-blue-600" onClick={() => decrementQty(item.id)}>-</button>
-                                    <span className="w-5 text-center text-xs font-bold">{item.qty}</span>
-                                    <button className="text-sm font-bold px-1 text-blue-400 hover:text-blue-600" onClick={() => incrementQty(item.id)}>+</button>
-                                </div>
-                            </div>
-                            {/* QTY PO */}
-                            <div className="flex flex-col items-center justify-start gap-0.5">
-                                <div className="flex items-center">
-                                    <button className="text-sm font-bold px-1 text-orange-400 hover:text-orange-600" onClick={() => decrementQtyPO(item.id)}>-</button>
-                                    <span className="w-5 text-center text-xs font-bold text-orange-700">{item.qtyPO || 0}</span>
-                                    <button className="text-sm font-bold px-1 text-orange-400 hover:text-orange-600" onClick={() => incrementQtyPO(item.id)}>+</button>
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="col-span-3 flex items-center justify-center gap-1 pl-1">
-                            <button className="text-sm font-bold px-1 text-[#87C3FE] border border-gray-200 rounded-sm" onClick={() => decrementQty(item.id)}>-</button>
-                            <span className="w-6 text-center text-xs font-bold">{item.qty}</span>
-                            <button className="text-sm font-bold px-1 text-[#87C3FE] border border-gray-200 rounded-sm" onClick={() => incrementQty(item.id)}>+</button>
-                        </div>
-                    )}
+                    <div className="col-span-1 flex justify-center items-center"><button onClick={() => removeItem(item.id)}><Trash2 className="w-4 h-4 text-red-500 cursor-pointer hover:text-red-700" /></button></div>
+
+                    {/* 2. QTY */}
+                    <div className="col-span-3 flex items-center justify-center gap-1 pl-1">
+                      <button className="text-lg font-bold px-2 py-1 text-[#87C3FE] hover:text-blue-600" onClick={() => decrementQty(item.id)}>-</button>
+                      <span className="w-8 text-center text-base font-bold">{item.qty}</span>
+                      <button className="text-lg font-bold px-2 py-1 text-[#87C3FE] hover:text-blue-600" onClick={() => incrementQty(item.id)}>+</button>
+                    </div>
 
                     {/* 3. UNIT */}
-                    <div className="col-span-2 flex justify-center pt-0.5">{originalProduct ? (<select className="w-full text-[10px] border border-gray-300 rounded px-0 py-0.5 focus:outline-none focus:border-blue-500 bg-white cursor-pointer" value={item.unit} onChange={(e) => handleCartUnitChange(item.id, item.productId, e.target.value)}>{originalProduct.availableUnits.map(u => (<option key={u.name} value={u.name}>{u.name}</option>))}</select>) : (<span className="text-[10px] font-medium">{item.unit}</span>)}</div>
-                    
+                    <div className="col-span-2 flex justify-center items-center mr-2">{originalProduct ? (<select className="w-full text-xs border-none bg-transparent focus:outline-none cursor-pointer appearance-none text-center relative" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%23999\' d=\'M6 8L2 4h8z\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'center right', paddingRight: '16px' }} value={item.unit} onChange={(e) => handleCartUnitChange(item.id, item.productId, e.target.value)}>{originalProduct.availableUnits.map(u => (<option key={u.name} value={u.name}>{u.name}</option>))}</select>) : (<span className="text-xs">{item.unit}</span>)}</div>
+
                     {/* 4. NAME & NOTE */}
-                    <div className="col-span-3 text-[11px] text-gray-700 leading-tight pr-1 break-words whitespace-normal pt-0.5">
-                        <div className="font-medium truncate">{item.name}</div>
-                        {/* MENAMPILKAN VARIAN (UKURAN) */}
-                        <div className="text-xs text-gray-400 font-normal">{item.size}</div>
-                        {item.note && <div className="text-[10px] text-gray-500 italic">"{item.note}"</div>}
+                    <div className="col-span-3 text-sm text-gray-700 leading-tight pr-1 break-words whitespace-normal pt-0.5">
+                      <div className="font-semibold text-base break-words whitespace-normal">{item.name}</div>
+                      {/* MENAMPILKAN VARIAN (UKURAN) */}
+                      <div className="text-xs text-gray-400 font-normal">{item.size}</div>
+                      {item.note && <div className="text-[10px] text-gray-500 italic">"{item.note}"</div>}
                     </div>
 
                     {/* 5. PRICE & TOTAL */}
                     <div className="col-span-3 text-right flex flex-col gap-0">
-                        <div className="flex justify-end items-center gap-1 text-[10px] text-gray-500">
-                            {formatRupiah(item.price)}
-                            <button onClick={() => startEditPrice(item.id, item.price)} className="ml-1"><Edit2 className="w-3 h-3 text-gray-400 hover:text-black cursor-pointer" /></button>
-                        </div>
-                        <div className="text-green-600 text-xs font-bold">{formatRupiah(item.price * totalQtyItem)}</div>
+                      <div className="text-green-600 text-base font-bold">{formatRupiah(item.price * totalQtyItem)}</div>
+                      <div className="flex justify-end items-center gap-1 text-xs text-gray-500">
+                        {formatRupiah(item.price)}/{item.unit}
+                        <button onClick={() => startEditPrice(item.id, item.price)} className="ml-1"><Edit2 className="w-4 h-4 text-gray-400 hover:text-black cursor-pointer" /></button>
+                      </div>
                     </div>
-                </div>
-               );
-            })
-          )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -893,7 +1358,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
             ) : (
                 <>
                     <button onClick={handleCetakPO} className="col-span-2 bg-[#7DB9E9] hover:bg-blue-400 flex items-center justify-center border-b border-white font-bold">
-                        Cetak PO
+                        Simpan Draft
                     </button>
                     <button onClick={handleOpenPayment} className="col-span-2 bg-[#A5CEF2] hover:bg-blue-300 text-black flex items-center justify-between px-6">
                         <span className="font-bold text-lg">Bayar</span>
@@ -905,70 +1370,86 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
         </div>
       </div>
 
-      {/* --- MODAL LIST SUPPLIER --- */}
-      {isSupplierModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-[500px] p-6 shadow-2xl relative border border-gray-200">
-            <div className="text-center font-medium text-lg mb-4">List Supplier</div>
-            <div className="relative mb-6 flex gap-2"><div className="relative flex-1"><input type="text" value={supplierSearch} onChange={(e) => setSupplierSearch(e.target.value)} placeholder="Cari Supplier..." className="w-full pl-4 pr-4 py-2 border border-gray-500 rounded-full focus:outline-none focus:border-blue-500"/></div></div>
-            <div className="space-y-3 mb-8 max-h-60 overflow-y-auto">
-              {filteredSuppliers.length > 0 ? (filteredSuppliers.map(supp => (<div key={supp.id} className="flex items-center justify-between"><div className="flex gap-4 text-gray-800"><span className="font-medium w-24 truncate">{supp.name}</span><span className="text-gray-600 w-32 hidden sm:inline">{supp.phone}</span></div><button onClick={() => handleSelectSupplier(supp)} className="bg-[#5EEAD4] text-black font-medium px-6 py-1 rounded-full hover:bg-teal-300 shadow-sm">Pilih</button></div>))) : (<div className="text-center text-gray-500 py-4">Supplier tidak ditemukan</div>)}
-            </div>
-            <div className="flex justify-center"><button onClick={handleOpenNewSupplier} className="bg-[#3FA2F6] text-white px-8 py-2 rounded-xl text-lg hover:bg-blue-600 shadow-md flex items-center gap-2">+ Supplier baru</button></div>
-            <button onClick={() => setIsSupplierModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL NEW SUPPLIER --- */}
-      {isNewSupplierModalOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200 p-4">
-          <div className="bg-white rounded-3xl w-full max-w-[550px] p-8 shadow-2xl relative border border-gray-200">
-            <div className="text-center font-medium text-lg mb-8">Supplier Baru</div>
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Nama Perusahaan*</label><input type="text" value={newSuppName} onChange={(e) => { setNewSuppName(e.target.value); setNewSuppNameError(false); }} className={`w-full border ${newSuppNameError ? 'border-red-500 bg-red-50' : 'border-gray-400'} rounded-xl px-3 py-2 focus:outline-none`}/>{newSuppNameError && <span className="text-red-500 text-xs mt-1">Nama wajib diisi</span>}</div><div><label className="block text-gray-700 mb-1">Telepon</label><input type="text" value={newSuppPhone} onChange={(e) => setNewSuppPhone(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><div><label className="block text-gray-700 mb-1">Kontak Person</label><input type="text" value={newSuppContact} onChange={(e) => setNewSuppContact(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div><div><label className="block text-gray-700 mb-1">Email</label><input type="email" value={newSuppEmail} onChange={(e) => setNewSuppEmail(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500"/></div></div>
-              <div><label className="block text-gray-700 mb-1">Alamat</label><textarea value={newSuppAddress} onChange={(e) => setNewSuppAddress(e.target.value)} className="w-full border border-gray-400 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500" rows={2}/></div>
-            </div>
-            <div className="mt-10 flex justify-center"><button onClick={handleSubmitNewSupplier} className="bg-[#5EEAD4] text-black font-medium px-12 py-2 rounded-full hover:bg-teal-300 shadow-md text-lg">Simpan</button></div>
-             <button onClick={() => setIsNewSupplierModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-black"><X className="w-6 h-6"/></button>
-          </div>
-        </div>
-      )}
 
       {/* MODAL POPUP DETAIL PRODUK */}
-      {selectedProduct && (
+      {selectedProduct && selectedProduct.variants.length > 0 && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm" onClick={closeProductModal}>
             <div className="bg-white rounded-2xl w-full max-w-[450px] p-6 shadow-2xl relative animate-in fade-in zoom-in duration-200 border border-gray-200" onClick={(e) => e.stopPropagation()}>
-                <div className="flex flex-col items-center mb-6"><img src={selectedProduct.image} alt="Product" className="h-32 object-contain mb-3" /><h3 className="text-xl font-medium text-gray-800 text-center">{selectedProduct.name}</h3></div>
-                
-                <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">Ukuran</label>
-                    <div className="grid grid-cols-2 gap-2">{selectedProduct.variants.map(v => (<label key={v} className="flex items-center cursor-pointer gap-2"><input type="radio" name="ukuran" value={v} checked={modalSize === v} onChange={() => setModalSize(v)} className="w-4 h-4 text-teal-600 focus:ring-teal-500"/><span className="text-sm">{v}</span></label>))}</div>
+                <div className="flex flex-col items-center mb-6">
+                  <img src={selectedProduct.image && selectedProduct.image.length > 0 ? selectedProduct.image[0] : ""} alt="Product" className="h-32 object-contain mb-3" />
+                  <h3 className="text-xl font-medium text-gray-800 text-center">{selectedProduct.name}</h3>
                 </div>
                 
                 <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-2">Unit</label>
-                    <div className="grid grid-cols-3 gap-2">{selectedProduct.availableUnits.map(u => (<label key={u.name} className="flex items-center cursor-pointer gap-2"><input type="radio" name="unit" value={u.name} checked={modalUnit === u.name} onChange={() => setModalUnit(u.name)} className="w-4 h-4 text-teal-600 focus:ring-teal-500"/><span className="text-sm font-bold">{u.name}</span></label>))}</div>
-                </div>
-                
-                <div className="mb-4">
-                    <label className="block text-gray-700 font-medium mb-1">Tambah deskripsi</label>
-                    <input type="text" value={modalNote} onChange={(e) => setModalNote(e.target.value)} className="w-full border-b border-gray-400 py-1 focus:outline-none focus:border-teal-500 transition-colors"/>
-                </div>
-
-                <div className="flex flex-col items-center gap-4 mb-6">
-                    <div className="flex items-center gap-4 mb-2">
-                        <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-10 h-10 flex items-center justify-center text-[#87C3FE] text-3xl font-bold bg-transparent hover:bg-blue-50 rounded">−</button>
-                        <span className="text-2xl font-bold w-8 text-center">{modalQty}</span>
-                        <button onClick={() => setModalQty(modalQty + 1)} className="w-10 h-10 flex items-center justify-center text-[#87C3FE] text-3xl font-bold bg-transparent hover:bg-blue-50 rounded">+</button>
+                    <label className="block text-gray-700 font-medium mb-2">Varian</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedProduct.variants.map(v => (
+                        <label key={v.name} className="flex items-center cursor-pointer gap-2">
+                          <input 
+                            type="radio" 
+                            name="variant" 
+                            value={v.name} 
+                            checked={modalVariant?.name === v.name} 
+                            onChange={() => {
+                              setModalVariant(v);
+                              const availableUnits = getAvailableUnits(v);
+                              if (availableUnits.length > 0) {
+                                setModalUnit(availableUnits[0]);
+                              }
+                            }} 
+                            className="w-4 h-4 text-teal-600 focus:ring-teal-500"
+                          />
+                          <span className="text-sm">{v.name}</span>
+                        </label>
+                      ))}
                     </div>
                 </div>
+                
+                {modalVariant && (
+                  <>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 font-medium mb-2">Unit</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {getAvailableUnits(modalVariant).map(u => (
+                            <label key={u} className="flex items-center cursor-pointer gap-2">
+                              <input 
+                                type="radio" 
+                                name="unit" 
+                                value={u} 
+                                checked={modalUnit === u} 
+                                onChange={() => setModalUnit(u)} 
+                                className="w-4 h-4 text-teal-600 focus:ring-teal-500"
+                              />
+                              <span className="text-sm font-bold">{u}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {modalUnit && (
+                          <div className="mt-2 text-sm text-gray-600">
+                            Harga: {formatRupiah(getPurchasePrice(modalVariant, modalUnit))}
+                          </div>
+                        )}
+                    </div>
+                    
+                    <div className="mb-4">
+                        <label className="block text-gray-700 font-medium mb-1">Tambah deskripsi</label>
+                        <input type="text" value={modalNote} onChange={(e) => setModalNote(e.target.value)} className="w-full border-b border-gray-400 py-1 focus:outline-none focus:border-teal-500 transition-colors"/>
+                    </div>
 
-                <div className="flex w-full gap-3">
-                    <button onClick={closeProductModal} className="flex-1 py-3 border border-red-300 text-red-400 font-bold text-base rounded hover:bg-red-50 transition-colors uppercase">Batal</button>
-                    <button onClick={handleSaveToCart} className="flex-1 py-3 bg-[#87C3FE] text-white font-bold text-base rounded hover:bg-blue-400 transition-colors shadow-md uppercase">Simpan</button>
-                </div>
+                    <div className="flex flex-col items-center gap-4 mb-6">
+                        <div className="flex items-center gap-4 mb-2">
+                            <button onClick={() => setModalQty(Math.max(1, modalQty - 1))} className="w-10 h-10 flex items-center justify-center text-[#87C3FE] text-3xl font-bold bg-transparent hover:bg-blue-50 rounded">−</button>
+                            <span className="text-2xl font-bold w-8 text-center">{modalQty}</span>
+                            <button onClick={() => setModalQty(modalQty + 1)} className="w-10 h-10 flex items-center justify-center text-[#87C3FE] text-3xl font-bold bg-transparent hover:bg-blue-50 rounded">+</button>
+                        </div>
+                    </div>
+
+                    <div className="flex w-full gap-3">
+                        <button onClick={closeProductModal} className="flex-1 py-3 border border-red-300 text-red-400 font-bold text-base rounded hover:bg-red-50 transition-colors uppercase">Batal</button>
+                        <button onClick={handleSaveToCart} className="flex-1 py-3 bg-[#87C3FE] text-white font-bold text-base rounded hover:bg-blue-400 transition-colors shadow-md uppercase">Simpan</button>
+                    </div>
+                  </>
+                )}
             </div>
         </div>
       )}
@@ -1031,7 +1512,47 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
 
             {/* KOLOM TENGAH */}
             <div className="w-full lg:w-1/3 p-4 lg:p-6 flex flex-col justify-between border-b lg:border-r border-gray-300">
-               <div className="border border-gray-300 shadow-sm"><div className="bg-[#87C3FE] p-4 text-2xl font-bold text-black border-b border-gray-300">Pembayaran</div><div className="bg-white p-6 space-y-6 text-xl"><div className="flex justify-between"><span>Tagihan</span><span>{formatRupiah(subTotal)}</span></div><div className="flex justify-between"><span>Bayar</span>{selectedPaymentMethod === 'HUTANG' ? (<span className="text-red-500 font-bold">HUTANG</span>) : (<span>{formatRupiah(paymentAmount)}</span>)}</div>{selectedPaymentMethod !== 'HUTANG' && (<><div className="flex justify-between text-red-500 font-bold"><span>Sisa</span><span>{formatRupiah(sisaTagihan)}</span></div><div className="flex justify-between"><span>Kembalian</span><span>{formatRupiah(kembalian)}</span></div></>)}</div></div>
+               <div className="border border-gray-300 shadow-sm">
+                 <div className="bg-[#87C3FE] p-4 text-2xl font-bold text-black border-b border-gray-300">Pembayaran</div>
+                 <div className="bg-white p-6 space-y-6 text-xl">
+                   <div className="flex justify-between">
+                     <span>Tagihan</span>
+                     <span>{formatRupiah(subTotal)}</span>
+                   </div>
+                   <div className="flex justify-between">
+                     <span>Bayar</span>
+                     {selectedPaymentMethod === 'HUTANG' ? (
+                       <span className="text-red-500 font-bold">HUTANG</span>
+                     ) : (
+                       <span>{formatRupiah(paymentAmount)}</span>
+                     )}
+                   </div>
+                   {selectedPaymentMethod === 'HUTANG' && (
+                     <>
+                       <div className="flex justify-between">
+                         <span>DP</span>
+                         <span className="font-bold">{formatRupiah(dpAmount)}</span>
+                       </div>
+                       <div className="flex justify-between text-red-500 font-bold">
+                         <span>Sisa Tagihan</span>
+                         <span>{formatRupiah(sisaTagihan)}</span>
+                       </div>
+                     </>
+                   )}
+                   {selectedPaymentMethod !== 'HUTANG' && (
+                     <>
+                       <div className="flex justify-between text-red-500 font-bold">
+                         <span>Sisa</span>
+                         <span>{formatRupiah(sisaTagihan)}</span>
+                       </div>
+                       <div className="flex justify-between">
+                         <span>Kembalian</span>
+                         <span>{formatRupiah(kembalian)}</span>
+                       </div>
+                     </>
+                   )}
+                 </div>
+               </div>
             </div>
 
             {/* KOLOM KANAN */}
@@ -1041,7 +1562,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                  <div className="flex items-center gap-4 pl-0 lg:pl-28"><button onClick={openPaymentNumpad} className={`border border-black px-4 py-2 text-xl flex items-center gap-2 w-40 ${selectedPaymentMethod === 'LAINNYA' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}>{selectedPaymentMethod === 'LAINNYA' && paymentAmount > 0 ? formatRupiah(paymentAmount) : <><Calculator className="w-5 h-5"/> Lainnya</>}</button></div>
                  <div className="flex items-center gap-4 mt-8"><span className="text-xl lg:text-2xl w-24">Transfer</span><button onClick={() => handleQuickPayment('TRANSFER')} className={`border border-black px-4 py-2 text-lg ${selectedPaymentMethod === 'TRANSFER' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}>BANK TRANSFER</button></div>
                  
-                 {/* TOMBOL HUTANG + INPUT JATUH TEMPO */}
+                 {/* TOMBOL HUTANG + INPUT JATUH TEMPO + DP */}
                  <div className="flex flex-col gap-2 mt-4 border-t border-gray-200 pt-4">
                      <div className="flex items-center gap-4">
                         <span className="text-xl lg:text-2xl w-24 font-bold text-red-600">HUTANG</span>
@@ -1049,6 +1570,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                             onClick={() => {
                                 setSelectedPaymentMethod('HUTANG');
                                 setPaymentAmount(0);
+                                setDpAmount(0);
                             }} 
                             className={`border border-black px-4 py-2 text-lg w-40 font-bold ${selectedPaymentMethod === 'HUTANG' ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}
                         >
@@ -1056,7 +1578,8 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                         </button>
                      </div>
                      {selectedPaymentMethod === 'HUTANG' && (
-                         <div className="pl-0 lg:pl-28 mt-2 animate-in fade-in slide-in-from-top-2">
+                         <div className="pl-0 lg:pl-28 mt-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+                             <div>
                              <label className="block text-sm font-bold text-gray-700 mb-1">Tanggal Jatuh Tempo:</label>
                              <input 
                                 type="date" 
@@ -1064,6 +1587,21 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                                 onChange={(e) => setJatuhTempoDate(e.target.value)}
                                 className="w-40 border border-gray-400 rounded px-2 py-1 font-bold text-gray-800 focus:outline-none focus:border-blue-500"
                              />
+                             </div>
+                             <div>
+                                 <label className="block text-sm font-bold text-gray-700 mb-1">Down Payment (DP):</label>
+                                 <button 
+                                    onClick={openDpNumpad}
+                                    className={`border border-black px-4 py-2 text-lg w-40 flex items-center gap-2 ${dpAmount > 0 ? 'bg-[#87C3FE]' : 'hover:bg-gray-100'}`}
+                                 >
+                                    {dpAmount > 0 ? formatRupiah(dpAmount) : <><Calculator className="w-5 h-5"/> Input DP</>}
+                                 </button>
+                                 {dpAmount > 0 && (
+                                    <div className="mt-1 text-xs text-gray-600">
+                                        Sisa Tagihan: {formatRupiah(subTotal - dpAmount)}
+                                    </div>
+                                 )}
+                             </div>
                          </div>
                      )}
                  </div>
@@ -1072,7 +1610,50 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
               <div className="lg:absolute lg:bottom-6 lg:right-6 lg:left-6 mt-6 lg:mt-0"><button onClick={handleProcessPayment} disabled={selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0} className={`w-full py-4 text-2xl font-bold flex items-center justify-center gap-2 rounded-lg ${(selectedPaymentMethod !== 'HUTANG' && sisaTagihan > 0) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-[#87C3FE] text-black hover:bg-blue-400 shadow-lg'}`}><ShoppingCart className="w-6 h-6"/> Proses Bayar</button></div>
 
               {isPaymentNumpadOpen && (
-                <div className="absolute inset-0 bg-white z-20 p-4 flex flex-col"><div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold">Input Nominal</h3><button onClick={() => setIsPaymentNumpadOpen(false)} className="text-red-500 font-bold">Batal</button></div><div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">{formatRupiah(parseInt(paymentNumpadValue))}</div><div className="grid grid-cols-3 gap-3 flex-1">{["1","2","3","4","5","6","7","8","9"].map(d => (<button key={d} onClick={() => appendPaymentDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">{d}</button>))}<button onClick={backspacePaymentDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button><button onClick={() => appendPaymentDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button><button onClick={confirmPaymentNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button></div></div>
+                <div className="absolute inset-0 bg-white z-20 p-4 flex flex-col">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">Input Nominal</h3>
+                    <button onClick={() => setIsPaymentNumpadOpen(false)} className="text-red-500 font-bold">Batal</button>
+                  </div>
+                  <div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">
+                    {formatRupiah(parseInt(paymentNumpadValue))}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 flex-1">
+                    {["1","2","3","4","5","6","7","8","9"].map(d => (
+                      <button key={d} onClick={() => appendPaymentDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">
+                        {d}
+                      </button>
+                    ))}
+                    <button onClick={backspacePaymentDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button>
+                    <button onClick={() => appendPaymentDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button>
+                    <button onClick={confirmPaymentNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button>
+                  </div>
+                </div>
+              )}
+
+              {isDpNumpadOpen && (
+                <div className="absolute inset-0 bg-white z-20 p-4 flex flex-col">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">Input Down Payment (DP)</h3>
+                    <button onClick={() => setIsDpNumpadOpen(false)} className="text-red-500 font-bold">Batal</button>
+            </div>
+                  <div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">
+                    {formatRupiah(parseInt(dpNumpadValue))}
+                  </div>
+                  <div className="mb-2 text-sm text-gray-600">
+                    Total Tagihan: {formatRupiah(subTotal)}
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 flex-1">
+                    {["1","2","3","4","5","6","7","8","9"].map(d => (
+                      <button key={d} onClick={() => appendDpDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">
+                        {d}
+                      </button>
+                    ))}
+                    <button onClick={backspaceDpDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button>
+                    <button onClick={() => appendDpDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button>
+                    <button onClick={confirmDpNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -1095,9 +1676,36 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                
                <div className="w-full space-y-3 mb-8">
                  <div className="flex justify-between text-gray-700"><span>Total Tagihan</span><span>{formatRupiah(subTotal)}</span></div>
-                 <div className="flex justify-between text-gray-700"><span>Bayar</span>{selectedPaymentMethod === 'HUTANG' ? <span className="text-red-500 font-bold">HUTANG</span> : <span>{formatRupiah(paymentAmount)}</span>}</div>
-                 {selectedPaymentMethod === 'HUTANG' && <div className="flex justify-between text-red-600 font-bold"><span>Jatuh Tempo</span><span>{jatuhTempoDate}</span></div>}
-                 <div className="flex justify-between text-black font-bold text-lg"><span>Kembalian</span><span>{formatRupiah(kembalian)}</span></div>
+                 <div className="flex justify-between text-gray-700">
+                   <span>Bayar</span>
+                   {selectedPaymentMethod === 'HUTANG' ? (
+                     <span className="text-red-500 font-bold">HUTANG</span>
+                   ) : (
+                     <span>{formatRupiah(paymentAmount)}</span>
+                   )}
+                 </div>
+                 {selectedPaymentMethod === 'HUTANG' && (
+                   <>
+                     <div className="flex justify-between text-gray-700">
+                       <span>Down Payment (DP)</span>
+                       <span className="font-bold">{formatRupiah(dpAmount)}</span>
+                     </div>
+                     <div className="flex justify-between text-red-600 font-bold">
+                       <span>Sisa Tagihan</span>
+                       <span>{formatRupiah(sisaTagihan)}</span>
+                     </div>
+                     <div className="flex justify-between text-red-600 font-bold">
+                       <span>Jatuh Tempo</span>
+                       <span>{jatuhTempoDate}</span>
+                     </div>
+                   </>
+                 )}
+                 {selectedPaymentMethod !== 'HUTANG' && (
+                   <div className="flex justify-between text-black font-bold text-lg">
+                     <span>Kembalian</span>
+                     <span>{formatRupiah(kembalian)}</span>
+                   </div>
+                 )}
                </div>
 
                <div className="grid grid-cols-1 gap-3 w-full">
@@ -1118,7 +1726,7 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                     </div>
                     <h3 className="text-xl font-bold text-gray-800">Set Jatuh Tempo</h3>
                 </div>
-                <div className="mb-6">
+                <div className="mb-4">
                     <label className="block text-sm font-bold text-gray-700 mb-2">Tanggal Jatuh Tempo</label>
                     <input 
                         type="date" 
@@ -1127,10 +1735,50 @@ const PembelianPage: React.FC<PembelianPageProps> = ({ setIsSidebarOpen, formatR
                         className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:border-blue-500 font-medium"
                     />
                 </div>
+                <div className="mb-6">
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Down Payment (DP) - Opsional</label>
+                    <button 
+                        onClick={openDpNumpad}
+                        className={`w-full border border-gray-400 rounded-lg px-4 py-3 font-bold text-gray-800 focus:outline-none focus:border-blue-500 flex items-center justify-center gap-2 ${dpAmount > 0 ? 'bg-blue-50 border-blue-500' : 'bg-white hover:bg-gray-50'}`}
+                    >
+                        {dpAmount > 0 ? formatRupiah(dpAmount) : <><Calculator className="w-5 h-5"/> Input DP (Opsional)</>}
+                    </button>
+                    {dpAmount > 0 && (
+                        <div className="mt-2 text-sm text-gray-600">
+                            Total: {formatRupiah(subTotal)} | DP: {formatRupiah(dpAmount)} | Sisa: {formatRupiah(subTotal - dpAmount)}
+                        </div>
+                    )}
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                     <button onClick={() => setIsPOModalOpen(false)} className="py-3 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors">Batal</button>
                     <button onClick={handleFinalizeCredit} className="py-3 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors shadow-lg">Simpan</button>
                 </div>
+            </div>
+        </div>
+      )}
+
+      {/* DP Numpad Modal untuk PO Modal */}
+      {isPOModalOpen && isDpNumpadOpen && (
+        <div className="fixed inset-0 z-[110] bg-white p-4 flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-xl font-bold">Input Down Payment (DP)</h3>
+            <button onClick={() => setIsDpNumpadOpen(false)} className="text-red-500 font-bold">Batal</button>
+          </div>
+          <div className="bg-gray-100 p-4 text-right text-3xl font-bold mb-4 rounded">
+            {formatRupiah(parseInt(dpNumpadValue))}
+          </div>
+          <div className="mb-2 text-sm text-gray-600">
+            Total Tagihan: {formatRupiah(subTotal)}
+          </div>
+          <div className="grid grid-cols-3 gap-3 flex-1">
+            {["1","2","3","4","5","6","7","8","9"].map(d => (
+              <button key={d} onClick={() => appendDpDigit(d)} className="bg-white border border-gray-300 text-2xl font-bold rounded shadow-sm hover:bg-gray-50">
+                {d}
+              </button>
+            ))}
+            <button onClick={backspaceDpDigit} className="bg-red-50 border border-red-200 text-2xl font-bold rounded text-red-500">⌫</button>
+            <button onClick={() => appendDpDigit("0")} className="bg-white border border-gray-300 text-2xl font-bold rounded">0</button>
+            <button onClick={confirmDpNumpad} className="bg-green-500 text-white text-2xl font-bold rounded">OK</button>
             </div>
         </div>
       )}

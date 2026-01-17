@@ -1,6 +1,7 @@
 // src/pages/Inventory/InventoryTambahProduk.tsx
 import React from 'react';
 import { Plus, X, Loader2, Image as ImageIcon, Save } from 'lucide-react';
+import type { UnitConversion } from '../../types';
 
 interface InventoryTambahProdukProps {
   setIsAddProductPage: (isOpen: boolean) => void;
@@ -9,7 +10,7 @@ interface InventoryTambahProdukProps {
   handleImageUpload: (index: number, file: File) => void;
   newProductName: string;
   setNewProductName: (name: string) => void;
-  unitConversions: { from: string; to: string; value: number }[];
+  unitConversions: UnitConversion[];
   updateConversion: (index: number, field: string, val: any) => void;
   handleRemoveConversion: (index: number) => void;
   handleAddConversion: () => void;
@@ -20,6 +21,7 @@ interface InventoryTambahProdukProps {
   newProductPrices: Record<string, { modal: number; jual: number }>;
   updatePrice: (variantIdx: number, unit: string, type: 'modal' | 'jual', value: number) => void;
   handleSaveNewProduct: () => void;
+  setDefaultProductData: () => void;
 }
 
 const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
@@ -40,24 +42,26 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
   newProductPrices,
   updatePrice,
   handleSaveNewProduct,
+  setDefaultProductData
 }) => {
-  
   // Helper internal untuk mendapatkan unit unik dari konversi
   const getUniqueUnits = () => {
     const units = new Set<string>();
     unitConversions.forEach(c => {
-      if (c.from) units.add(c.from);
-      if (c.to) units.add(c.to);
+      if (c.name) units.add(c.name);
     });
     return Array.from(units);
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-white/90 backdrop-blur-sm animate-in fade-in duration-200 p-4 md:p-8" onClick={(e) => {
-        if (e.target === e.currentTarget) setIsAddProductPage(false);
+    <div className="fixed inset-0 z-70 flex items-center justify-center bg-white/90 backdrop-blur-sm animate-in fade-in duration-200 p-4 md:p-8" onClick={(e) => {
+        if (e.target === e.currentTarget) {
+            setIsAddProductPage(false);
+            setDefaultProductData();
+        }
     }}>
         {isUploading && (
-          <div className="absolute inset-0 z-[100] bg-black/60 flex flex-col items-center justify-center text-white rounded-3xl">
+          <div className="absolute inset-0 z-100 bg-black/60 flex flex-col items-center justify-center text-white rounded-3xl">
             <Loader2 className="w-16 h-16 animate-spin mb-4 text-[#3FA2F6]" />
             <h2 className="text-2xl font-bold">Menyimpan Produk...</h2>
           </div>
@@ -69,7 +73,10 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                 <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                   <Plus className="w-6 h-6 text-blue-600"/> Tambah Produk Baru
                 </h1>
-                <button onClick={() => setIsAddProductPage(false)} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-600 rounded-full transition-colors">
+                <button onClick={() => {
+                    setIsAddProductPage(false)
+                    setDefaultProductData()
+                }} className="p-2 hover:bg-red-50 text-gray-500 hover:text-red-600 rounded-full transition-colors">
                   <X className="w-6 h-6"/>
                 </button>
             </div>
@@ -115,39 +122,61 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                     </div>
 
                     {/* UNIT CONVERSION & VARIASI */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div className="flex justify-center items-center">
                         {/* LEFT: UNIT CONVERSION */}
-                        <div>
+                        <div className='w-full'>
                             <h3 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Unit Conversion</h3>
                             <div className="space-y-3">
                                 {unitConversions.map((conv, idx) => (
                                     <div key={idx} className="flex items-center gap-2">
-                                        <div className="border border-gray-400 rounded-full px-4 py-1 w-12 text-center font-bold bg-gray-100">1</div>
+                                        <div className="border border-gray-400 rounded-full px-4 py-1 text-center font-bold bg-gray-100">1</div>
                                         <input 
                                           type="text" 
-                                          placeholder="Unit Besar (Karung)" 
-                                          value={conv.from} 
-                                          onChange={(e) => updateConversion(idx, 'from', e.target.value)} 
-                                          className="border border-gray-400 rounded-full px-4 py-1 w-full text-sm"
+                                          placeholder="Unit" 
+                                          value={conv.name} 
+                                          onChange={(e) => updateConversion(idx, 'name', e.target.value)} 
+                                          className={`border border-gray-400 rounded-full px-4 py-1 w-full text-sm` }
                                         />
                                         <span className="font-bold">=</span>
-                                        <input 
+                                        {conv.sourceConversion && <input 
                                           type="number" 
-                                          value={conv.value || ''} 
-                                          onChange={(e) => updateConversion(idx, 'value', e.target.value)} 
-                                          className="border border-black rounded-full px-2 py-1 w-20 text-center"
-                                        />
-                                        <input 
+                                          value={conv.qtyConversion || '0'} 
+                                          onChange={(e) => updateConversion(idx, 'qtyConversion', e.target.value)} 
+                                          className={`border border-black rounded-full px-2 py-1 w-20 text-center`}
+                                        />}
+                                        {!conv.sourceConversion && <input 
+                                          type="number"  
+                                          value={conv.qtyConversion}
+                                          className={`bg-gray-200 rounded-full px-2 py-1 w-20 text-center`}
+                                          disabled={true}
+                                        />}
+                                        {
+                                        !conv.sourceConversion && <input 
                                           type="text" 
-                                          placeholder="Unit Kecil (Pack)" 
-                                          value={conv.to} 
-                                          onChange={(e) => updateConversion(idx, 'to', e.target.value)} 
-                                          className="border border-gray-400 rounded-full px-4 py-1 w-full text-sm"
-                                        />
-                                        {unitConversions.length > 1 && (
+                                          placeholder="..." 
+                                          value={conv.name} 
+                                          onChange={(e) => updateConversion(idx, 'sourceConversion', e.target.value)} 
+                                          className="bg-gray-200 rounded-full px-4 py-1 w-full text-sm"
+                                          disabled={true}
+                                        /> 
+                                        }
+                                        {conv.sourceConversion && <input 
+                                          type="text" 
+                                          placeholder="..." 
+                                          value={unitConversions[0].name} 
+                                          onChange={(e) => updateConversion(idx, 'sourceConversion', e.target.value)} 
+                                          className="bg-gray-200 rounded-full px-4 py-1 w-full text-sm"
+                                          disabled={true}
+                                        />}
+                                        {unitConversions.length > 1 && conv.sourceConversion && (
                                           <button onClick={() => handleRemoveConversion(idx)} className="text-red-500 hover:bg-red-50 rounded-full p-1">
                                             <X className="w-4 h-4"/>
                                           </button>
+                                        )}
+                                        {!conv.sourceConversion && (
+                                          <div className="text-white rounded-full p-1">
+                                            <X className="w-4 h-4"/>
+                                          </div>
                                         )}
                                     </div>
                                 ))}
@@ -156,7 +185,7 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                         </div>
 
                         {/* RIGHT: VARIASI PRODUK */}
-                        <div>
+                        {/* <div>
                             <h3 className="font-bold text-lg mb-4 text-gray-800 border-b pb-2">Variasi Produk</h3>
                             <div className="space-y-3">
                                 {newProductVariants.map((v, idx) => (
@@ -173,7 +202,7 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                                 ))}
                                 <button onClick={handleAddVariant} className="w-full border border-dashed border-gray-400 text-gray-500 rounded-full px-4 py-2 text-left hover:bg-gray-50">+ Variasi</button>
                             </div>
-                        </div>
+                        </div> */}
                     </div>
 
                     {/* HARGA TABLE (DYNAMIC GENERATED) */}
@@ -183,7 +212,7 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-gray-100 text-gray-700 font-bold border-b border-gray-400">
                                     <tr>
-                                        <th className="px-4 py-3">Variasi</th>
+                                        {/* <th className="px-4 py-3">Variasi</th> */}
                                         <th className="px-4 py-3">Unit</th>
                                         <th className="px-4 py-3 text-right">Harga Modal</th>
                                         <th className="px-4 py-3 text-right">Harga Jual</th>
@@ -200,7 +229,7 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
 
                                             return (
                                                 <tr key={priceKey} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-4 py-3 font-bold">{v.name || <span className="text-gray-400 italic">Nama variasi...</span>}</td>
+                                                    {/* <td className="px-4 py-3 font-bold">{v.name || <span className="text-gray-400 italic">Nama variasi...</span>}</td> */}
                                                     <td className="px-4 py-3">
                                                         <div className="border border-gray-400 rounded-full px-3 py-1 bg-white text-xs w-fit shadow-sm font-bold text-gray-700">
                                                             {unit || "Unit..."}
