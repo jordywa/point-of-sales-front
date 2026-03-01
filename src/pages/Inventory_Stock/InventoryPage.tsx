@@ -311,7 +311,7 @@ const InventoryPage: React.FC<InventoryPageProps> = ({ setIsSidebarOpen }) => {
     if (!newProductName) return alert("Nama Akun Wajib Diisi!");
       const mappedProductVariants: InventoryVariant[] = []
       newProductVariants.forEach((val) => {
-        mappedProductVariants.push({name: val.name, unitConversions: [], currSeq: [], qty: 0})
+        mappedProductVariants.push({name: val.name, unitConversions: [], currSeq: [], qty: 0, poQty: 0})
       });
       Object.entries(newProductPrices).forEach(([key, value]) => {
           const keySplit = key.split("-")

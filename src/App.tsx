@@ -5,12 +5,12 @@ import Sidebar from './components/Sidebar';
 // import LoginPage from './pages/LoginPage';
 
 // Import Halaman
-import KasirPage from './pages/Transaction/KasirPage';
+import KasirPage from './pages/Transaction/Kasir/KasirPage';
 import DashboardPage from './pages/Dashboard/DashboardPage'; // <--- [BARU] Import Dashboard
 import InventoryPage from './pages/Inventory_Stock/InventoryPage';
 import StockInPage from './pages/Inventory_Stock/StockInPage';
 import StockOpnamePage from './pages/Inventory_Stock/StockOpnamePage';
-import PembelianPage from './pages/Transaction/PembelianPage';
+import PembelianPage from './pages/Transaction/Pembelian/PembelianPage';
 import HutangPiutangPage from './pages/Finance/HutangPiutangPage';
 import MasterSettingPage from './pages/MasterSetting';
 import TemplateNotaPage from './pages/Template_Other/TemplateNotaPage';

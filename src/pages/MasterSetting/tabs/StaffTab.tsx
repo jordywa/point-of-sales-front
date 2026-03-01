@@ -177,7 +177,7 @@ const StaffTab: React.FC = () => {
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
                 <div>
-                    <label className="block text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
+                    <label className="text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
                         <User className="w-4 h-4"/> Nama Staff*
                     </label>
                     <input 
@@ -190,7 +190,7 @@ const StaffTab: React.FC = () => {
                     />
                 </div>
                 <div>
-                    <label className="block text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
+                    <label className="text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
                         <Briefcase className="w-4 h-4"/> Jabatan (Role)
                     </label>
                     <input 
@@ -206,7 +206,7 @@ const StaffTab: React.FC = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mt-6">
                 <div>
-                    <label className="block text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
+                    <label className="text-gray-800 font-medium mb-2 flex items-center gap-2 text-sm md:text-base">
                         <Phone className="w-4 h-4"/> No. HP
                     </label>
                     <input 

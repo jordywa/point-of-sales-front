@@ -8,23 +8,14 @@ import { db } from '../../../firebaseConfig';
 import authenticatedAxios from '../../../utils/api';
 import { API_BASE_URL } from '../../../apiConfig';
 import type { NumberingConfig } from '../../../types';
+import { DEFAULT_NUMBERING_CONFIG } from '../../../types';
 
 const NumberingTab: React.FC = () => {
-  const { user, userDb } = useAuth();
+  const { user } = useAuth();
   const [isNumberingEditing, setIsNumberingEditing] = useState(false);
   
-  const defaultNumberingData: NumberingConfig = {
-      salesPrefix: "SO",      
-      purchasePrefix: "PU",   
-      separator: "-",         
-      yearFormat: "YYYY",     
-      includeDay: false,      
-      salesCounter: 1,
-      purchaseCounter: 1
-  };
-  
-  const [numberingData, setNumberingData] = useState<NumberingConfig>(defaultNumberingData);
-  const [tempNumberingData, setTempNumberingData] = useState<NumberingConfig>(defaultNumberingData);
+  const [numberingData, setNumberingData] = useState<NumberingConfig>(DEFAULT_NUMBERING_CONFIG);
+  const [tempNumberingData, setTempNumberingData] = useState<NumberingConfig>(DEFAULT_NUMBERING_CONFIG);
   const [companyId, setCompanyId] = useState<string>("");
 
   // Fetch Company data from Firebase (db utama, bukan userDb)
@@ -44,8 +35,8 @@ const NumberingTab: React.FC = () => {
           setTempNumberingData(companyData.numbering);
         } else {
           // Use default if no numbering config exists
-          setNumberingData(defaultNumberingData);
-          setTempNumberingData(defaultNumberingData);
+          setNumberingData(DEFAULT_NUMBERING_CONFIG);
+          setTempNumberingData(DEFAULT_NUMBERING_CONFIG);
         }
       }
     }, (err) => {
@@ -55,7 +46,7 @@ const NumberingTab: React.FC = () => {
     return () => unsubscribe();
   }, [user?.companyId]);
 
-  const getPreviewNumber = (prefix: string, counter: number) => {
+  const getPreviewNumber = (prefix: string) => {
       const date = new Date();
       const yearFull = date.getFullYear().toString();
       const year = tempNumberingData.yearFormat === 'YY' ? yearFull.slice(-2) : yearFull;
@@ -63,7 +54,7 @@ const NumberingTab: React.FC = () => {
       const day = String(date.getDate()).padStart(2, '0');
       
       const datePart = tempNumberingData.includeDay ? `${year}${month}${day}` : `${year}${month}`;
-      return `${prefix}${datePart}${tempNumberingData.separator}${counter}`;
+      return `${prefix}${datePart}${tempNumberingData.separator}${1}`;
   };
 
   const handleEditNumbering = () => { 
@@ -81,15 +72,22 @@ const NumberingTab: React.FC = () => {
       alert("Company ID tidak ditemukan!");
       return;
     }
+
+    // Merge dengan default agar field yang undefined (dari data lama) terisi value default
+    const safeNumberingData: NumberingConfig = {
+      ...DEFAULT_NUMBERING_CONFIG,
+      ...tempNumberingData,
+    };
     
     try {
       const response = await authenticatedAxios.put(`${API_BASE_URL}/api/companies/update`, {
         id: companyId,
-        numbering: tempNumberingData
+        numbering: safeNumberingData
       });
       
       if (response.status === 200) {
-        setNumberingData(tempNumberingData);
+        setNumberingData(safeNumberingData);
+        setTempNumberingData(safeNumberingData);
         setIsNumberingEditing(false);
         alert("Pengaturan Penomoran Berhasil Disimpan!");
       } else {
@@ -184,7 +182,33 @@ const NumberingTab: React.FC = () => {
                     <div className="p-3 bg-gray-100 rounded border border-gray-200 text-center">
                         <label className="block text-xs text-gray-500 mb-1">Preview Nomor Selanjutnya</label>
                         <div className="text-xl font-mono font-bold text-green-700 break-all">
-                            {getPreviewNumber(tempNumberingData.salesPrefix, tempNumberingData.salesCounter)}
+                            {getPreviewNumber(tempNumberingData.salesPrefix ?? DEFAULT_NUMBERING_CONFIG.salesPrefix)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="border border-gray-300 rounded-xl p-6 bg-white shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2 h-full bg-purple-500"></div>
+                <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                     Penjualan Kredit (PO)
+                </h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-gray-600 font-medium mb-1 text-sm">Prefix (Awalan)</label>
+                        <input 
+                            type="text" 
+                            disabled={!isNumberingEditing} 
+                            value={tempNumberingData.poSalesPrefix} 
+                            onChange={(e) => setTempNumberingData({...tempNumberingData, poSalesPrefix: e.target.value.toUpperCase()})} 
+                            className={`w-full border rounded px-3 py-2 font-bold uppercase tracking-widest ${isNumberingEditing ? 'border-gray-400 bg-white' : 'bg-gray-100 border-transparent text-gray-500'}`}
+                            placeholder="PO"
+                        />
+                    </div>
+                    <div className="p-3 bg-gray-100 rounded border border-gray-200 text-center">
+                        <label className="block text-xs text-gray-500 mb-1">Preview Nomor Selanjutnya</label>
+                        <div className="text-xl font-mono font-bold text-purple-700 break-all">
+                            {getPreviewNumber(tempNumberingData.poSalesPrefix ?? DEFAULT_NUMBERING_CONFIG.poSalesPrefix)}
                         </div>
                     </div>
                 </div>
@@ -210,7 +234,33 @@ const NumberingTab: React.FC = () => {
                     <div className="p-3 bg-gray-100 rounded border border-gray-200 text-center">
                         <label className="block text-xs text-gray-500 mb-1">Preview Nomor Selanjutnya</label>
                         <div className="text-xl font-mono font-bold text-orange-700 break-all">
-                            {getPreviewNumber(tempNumberingData.purchasePrefix, tempNumberingData.purchaseCounter)}
+                            {getPreviewNumber(tempNumberingData.purchasePrefix ?? DEFAULT_NUMBERING_CONFIG.purchasePrefix)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="border border-gray-300 rounded-xl p-6 bg-white shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2 h-full bg-red-500"></div>
+                <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2">
+                     Pembelian Kredit (PO)
+                </h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-gray-600 font-medium mb-1 text-sm">Prefix (Awalan)</label>
+                        <input 
+                            type="text" 
+                            disabled={!isNumberingEditing} 
+                            value={tempNumberingData.poPurchasePrefix ?? DEFAULT_NUMBERING_CONFIG.poPurchasePrefix} 
+                            onChange={(e) => setTempNumberingData({...tempNumberingData, poPurchasePrefix: e.target.value.toUpperCase()})} 
+                            className={`w-full border rounded px-3 py-2 font-bold uppercase tracking-widest ${isNumberingEditing ? 'border-gray-400 bg-white' : 'bg-gray-100 border-transparent text-gray-500'}`}
+                            placeholder="PPO"
+                        />
+                    </div>
+                    <div className="p-3 bg-gray-100 rounded border border-gray-200 text-center">
+                        <label className="block text-xs text-gray-500 mb-1">Preview Nomor Selanjutnya</label>
+                        <div className="text-xl font-mono font-bold text-red-700 break-all">
+                            {getPreviewNumber(tempNumberingData.poPurchasePrefix ?? DEFAULT_NUMBERING_CONFIG.poPurchasePrefix)}
                         </div>
                     </div>
                 </div>

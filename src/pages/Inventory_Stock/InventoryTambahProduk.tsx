@@ -141,7 +141,7 @@ const InventoryTambahProduk: React.FC<InventoryTambahProdukProps> = ({
                                         {conv.sourceConversion && <input 
                                           type="number" 
                                           value={conv.qtyConversion || '0'} 
-                                          onChange={(e) => updateConversion(idx, 'qtyConversion', e.target.value)} 
+                                          onChange={(e) => updateConversion(idx, 'qtyConversion', Number(e.target.value))} 
                                           className={`border border-black rounded-full px-2 py-1 w-20 text-center`}
                                         />}
                                         {!conv.sourceConversion && <input 

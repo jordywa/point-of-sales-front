@@ -1,5 +1,5 @@
 // src/components/ConfirmationDialog.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
 interface ConfirmationDialogProps {
@@ -23,8 +23,6 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   cancelText = "Batal",
   type = 'warning'
 }) => {
-  // Sound effect logic
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -38,7 +36,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden transform animate-in zoom-in-95 duration-200">
         <div className="p-6">
           <div className="flex items-center justify-between mb-4">
@@ -55,12 +53,13 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         </div>
         
         <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row gap-3">
-          <button 
+          {cancelText !== '' && <button 
             onClick={onCancel}
             className="flex-1 px-6 py-3 rounded-full border border-gray-300 text-gray-700 font-semibold hover:bg-gray-100 transition-all"
           >
             {cancelText}
-          </button>
+          </button>}
+          
           <button 
             onClick={onConfirm}
             className="flex-1 px-6 py-3 rounded-full bg-[#BEDFFF] hover:bg-[#A5CEF2] text-black font-bold shadow-md transition-all active:scale-95"
